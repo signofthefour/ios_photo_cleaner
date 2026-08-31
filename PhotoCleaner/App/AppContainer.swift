@@ -29,4 +29,12 @@ final class AppContainer {
     func makeCleanerViewModel(source: CleaningSource) -> CleanerViewModel {
         CleanerViewModel(source: source, library: library, sessions: sessions)
     }
+
+    func makeDeletionReviewViewModel() -> DeletionReviewViewModel {
+        DeletionReviewViewModel(sessions: sessions)
+    }
+
+    func makeSettingsViewModel() -> SettingsViewModel {
+        SettingsViewModel(library: library)
+    }
 }

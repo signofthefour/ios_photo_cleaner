@@ -30,9 +30,9 @@ struct RootView: View {
         case let .cleaner(source):
             CleanerView(model: container.makeCleanerViewModel(source: source))
         case .deletionReview:
-            Text("Deletion Review")
+            DeletionReviewView(model: container.makeDeletionReviewViewModel())
         case .settings:
-            Text("Settings")
+            SettingsView(model: container.makeSettingsViewModel())
         }
     }
 }

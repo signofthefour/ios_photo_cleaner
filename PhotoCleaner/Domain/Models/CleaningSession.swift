@@ -79,4 +79,11 @@ struct CleaningSession: Hashable, Codable, Sendable {
         }
         updatedAt = Date()
     }
+
+    mutating func restorePendingDeletion(id assetID: String) {
+        guard decisions[assetID] == .pendingDelete else { return }
+        decisions.removeValue(forKey: assetID)
+        pendingDeletionIDs.removeAll { $0 == assetID }
+        updatedAt = Date()
+    }
 }

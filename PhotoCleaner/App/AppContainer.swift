@@ -21,4 +21,12 @@ final class AppContainer {
     func makeHomeViewModel() -> HomeViewModel {
         HomeViewModel(library: library, sessions: sessions)
     }
+
+    func makeSourcePickerViewModel() -> SourcePickerViewModel {
+        SourcePickerViewModel(library: library)
+    }
+
+    func makeCleanerViewModel(source: CleaningSource) -> CleanerViewModel {
+        CleanerViewModel(source: source, library: library, sessions: sessions)
+    }
 }

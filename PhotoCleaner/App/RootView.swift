@@ -24,9 +24,11 @@ struct RootView: View {
     private func destination(for route: AppRoute) -> some View {
         switch route {
         case .sourcePicker:
-            Text("Source Picker")
-        case .cleaner:
-            Text("Cleaner")
+            SourcePickerView(model: container.makeSourcePickerViewModel()) { source in
+                router.navigate(to: .cleaner(source))
+            }
+        case let .cleaner(source):
+            CleanerView(model: container.makeCleanerViewModel(source: source))
         case .deletionReview:
             Text("Deletion Review")
         case .settings:

@@ -19,8 +19,11 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
     private let timelineGroups: [TimelineGroup]
     private let albums: [PhotoAlbum]
     private let assetsBySource: [CleaningSource: [PhotoAsset]]
+    private var previewsByAssetID: [String: LocalPhotoPreview]
+    private var previewDelayNanosecondsByAssetID: [String: UInt64] = [:]
     private var forcedError: MockPhotoLibraryError?
 
+    private(set) var previewRequests: [PhotoPreviewRequest] = []
     private(set) var favoriteMutations: [FavoriteMutation] = []
     private(set) var albumAssignments: [AlbumAssignment] = []
     private(set) var createdAlbumNames: [String] = []
@@ -31,12 +34,14 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         timelineGroups: [TimelineGroup] = [],
         albums: [PhotoAlbum] = [],
         assetsBySource: [CleaningSource: [PhotoAsset]] = [:],
+        previewsByAssetID: [String: LocalPhotoPreview] = [:],
         forcedError: MockPhotoLibraryError? = nil
     ) {
         self.accessStatus = accessStatus
         self.timelineGroups = timelineGroups
         self.albums = albums
         self.assetsBySource = assetsBySource
+        self.previewsByAssetID = previewsByAssetID
         self.forcedError = forcedError
     }
 
@@ -79,7 +84,12 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         return MockPhotoLibraryService(
             timelineGroups: [timeline],
             albums: [album],
-            assetsBySource: [.timeline(timeline): assets, .album(album): assets]
+            assetsBySource: [.timeline(timeline): assets, .album(album): assets],
+            previewsByAssetID: [
+                "asset-1": .init(content: .systemSymbol("photo"), isDegraded: false),
+                "asset-2": .init(content: .systemSymbol("photo.fill"), isDegraded: false),
+                "asset-3": .init(content: .systemSymbol("mountain.2"), isDegraded: false)
+            ]
         )
     }
 
@@ -89,6 +99,14 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
 
     func setForcedError(_ error: MockPhotoLibraryError?) {
         forcedError = error
+    }
+
+    func setPreview(_ preview: LocalPhotoPreview?, for assetID: String) {
+        previewsByAssetID[assetID] = preview
+    }
+
+    func setPreviewDelayNanoseconds(_ delay: UInt64, for assetID: String) {
+        previewDelayNanosecondsByAssetID[assetID] = delay
     }
 
     func requestAuthorization() async -> PhotoAccessStatus {
@@ -108,6 +126,17 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
     func fetchAssets(for source: CleaningSource) async throws -> [PhotoAsset] {
         try throwIfForced()
         return assetsBySource[source] ?? []
+    }
+
+    func fetchLocalPreview(for request: PhotoPreviewRequest) async throws -> LocalPhotoPreview? {
+        try throwIfForced()
+        previewRequests.append(request)
+        let delay = previewDelayNanosecondsByAssetID[request.assetID] ?? 0
+        let preview = previewsByAssetID[request.assetID]
+        if delay > 0 {
+            try await Task.sleep(nanoseconds: delay)
+        }
+        return preview
     }
 
     func setFavorite(_ favorite: Bool, assetID: String) async throws {

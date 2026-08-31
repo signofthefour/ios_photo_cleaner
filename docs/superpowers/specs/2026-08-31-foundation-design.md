@@ -120,6 +120,13 @@ pending-delete decisions, undo, in-memory save/resume, missing-asset
 handling, and the invariant that swipe decisions do not call deletion.
 Tests use mocks exclusively and never interact with a real photo library.
 
+> **Superseded verification guidance (2026-08-31):** The historical iPhone 16
+> and Xcode-unavailable guidance below is retained as part of the original
+> foundation design record. The approved current verification destination is
+> `platform=iOS Simulator,name=PhotoCleaner iPhone 13 mini`, as specified by
+> `2026-08-31-local-preview-card-design.md`; Xcode 26.6 and the iOS 26.5
+> simulator runtime are available.
+
 When full Xcode is installed and selected, verification uses:
 
 ```sh

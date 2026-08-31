@@ -23,7 +23,8 @@ final class SafetyInvariantTests: XCTestCase {
         await cleaner.queueCurrentForDeletion()
         cleaner.undo()
         await cleaner.queueCurrentForDeletion()
-        try await cleaner.save()
+        let shouldDismiss = await cleaner.saveForExit()
+        XCTAssertTrue(shouldDismiss)
 
         let review = DeletionReviewViewModel(sessions: repository)
         await review.load()

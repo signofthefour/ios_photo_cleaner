@@ -9,26 +9,44 @@ struct PrintedPhotoCardPreviewPresentation {
 
     let content: Content
     let statusText: String?
+    let accessibilityValue: String
 
-    init(preview: LocalPhotoPreview?, previewStatusText: String?) {
+    init(
+        preview: LocalPhotoPreview?,
+        previewStatusText: String?,
+        metadata: PhotoCardMetadata,
+        isFavorite: Bool
+    ) {
+        let resolvedContent: Content
+        let resolvedStatusText: String?
+
         switch preview?.content {
         case let .systemSymbol(name):
-            content = .systemSymbol(name)
-            statusText = previewStatusText
+            resolvedContent = .systemSymbol(name)
+            resolvedStatusText = previewStatusText
         case let .encodedImageData(data):
             if let image = UIImage(data: data) {
-                content = .image(image)
-                statusText = previewStatusText
+                resolvedContent = .image(image)
+                resolvedStatusText = previewStatusText
             } else {
-                content = .placeholder
-                statusText = previewStatusText ?? "Local preview unavailable"
+                resolvedContent = .placeholder
+                resolvedStatusText = previewStatusText ?? "Local preview unavailable"
             }
         case nil:
-            content = .placeholder
-            statusText = previewStatusText
+            resolvedContent = .placeholder
+            resolvedStatusText = previewStatusText
+        }
+
+        content = resolvedContent
+        statusText = resolvedStatusText
+
+        let favoriteSentence = isFavorite ? "Favorite." : "Not favorite."
+        if let resolvedStatusText {
+            accessibilityValue = "\(metadata.accessibilityValue) \(favoriteSentence) \(resolvedStatusText)."
+        } else {
+            accessibilityValue = "\(metadata.accessibilityValue) \(favoriteSentence)"
         }
     }
-
 }
 
 struct PrintedPhotoCard: View {
@@ -42,7 +60,9 @@ struct PrintedPhotoCard: View {
     var body: some View {
         let presentation = PrintedPhotoCardPreviewPresentation(
             preview: preview,
-            previewStatusText: previewStatusText
+            previewStatusText: previewStatusText,
+            metadata: metadata,
+            isFavorite: isFavorite
         )
 
         VStack(spacing: PhotoCleanerTheme.photoFrameInset) {
@@ -83,7 +103,7 @@ struct PrintedPhotoCard: View {
         .clipShape(RoundedRectangle(cornerRadius: PhotoCleanerTheme.cardCornerRadius))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Photo for review")
-        .accessibilityValue("\(metadata.accessibilityValue) \(isFavorite ? "Favorite." : "Not favorite.")")
+        .accessibilityValue(presentation.accessibilityValue)
         .accessibilityAction(named: "Keep Photo", keepAction)
         .accessibilityAction(named: "Queue for Deletion", queueAction)
     }

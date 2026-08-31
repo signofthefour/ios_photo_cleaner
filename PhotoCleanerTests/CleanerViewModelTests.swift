@@ -30,12 +30,99 @@ final class CleanerViewModelTests: XCTestCase {
 
         await first.load()
         await first.keepCurrent()
-        try await first.save()
+        let shouldDismiss = await first.saveForExit()
+        XCTAssertTrue(shouldDismiss)
 
         let second = CleanerViewModel(source: source, library: library, sessions: repository)
         await second.load()
 
         XCTAssertEqual(second.session.currentPosition, 1)
+    }
+
+    func testExitSaveReturnsSuccessOnlyAfterRepositoryPersistsSession() async {
+        let library = MockPhotoLibraryService.sample
+        let repository = ThrowingSessionRepository()
+        let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 3))
+        let model = CleanerViewModel(source: source, library: library, sessions: repository)
+
+        await model.load()
+        await model.keepCurrent()
+
+        let shouldDismiss = await model.saveForExit()
+        let persistedSession = await repository.currentSession
+
+        XCTAssertTrue(shouldDismiss)
+        XCTAssertFalse(model.isSaving)
+        XCTAssertNil(model.saveErrorMessage)
+        XCTAssertEqual(persistedSession?.currentPosition, 1)
+    }
+
+    func testFailedExitSaveKeepsSessionAndExposesRecoverableError() async {
+        let library = MockPhotoLibraryService.sample
+        let repository = ThrowingSessionRepository(shouldThrowOnSave: true)
+        let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 3))
+        let model = CleanerViewModel(source: source, library: library, sessions: repository)
+
+        await model.load()
+        await model.queueCurrentForDeletion()
+
+        let shouldDismiss = await model.saveForExit()
+        let persistedSession = await repository.currentSession
+
+        XCTAssertFalse(shouldDismiss)
+        XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(
+            model.saveErrorMessage,
+            "This cleaning session could not be saved. Please try again."
+        )
+        XCTAssertEqual(model.session.pendingDeletionIDs, ["asset-1"])
+        XCTAssertNil(persistedSession)
+    }
+
+    func testExitSaveCanRetryAfterFailure() async {
+        let library = MockPhotoLibraryService.sample
+        let repository = ThrowingSessionRepository(shouldThrowOnSave: true)
+        let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 3))
+        let model = CleanerViewModel(source: source, library: library, sessions: repository)
+
+        await model.load()
+        await model.keepCurrent()
+        let shouldDismissAfterFailure = await model.saveForExit()
+        XCTAssertFalse(shouldDismissAfterFailure)
+
+        await repository.setShouldThrowOnSave(false)
+        let shouldDismiss = await model.saveForExit()
+        let persistedSession = await repository.currentSession
+
+        XCTAssertTrue(shouldDismiss)
+        XCTAssertNil(model.saveErrorMessage)
+        XCTAssertEqual(persistedSession?.currentPosition, 1)
+    }
+
+    func testExitSaveIgnoresDuplicateRequestWhileSaving() async {
+        let library = MockPhotoLibraryService.sample
+        let repository = ThrowingSessionRepository(saveDelayNanoseconds: 200_000_000)
+        let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 3))
+        let model = CleanerViewModel(source: source, library: library, sessions: repository)
+
+        await model.load()
+        let firstSave = Task { await model.saveForExit() }
+        let firstSaveStarted = await waitForSaveCall(in: repository)
+        XCTAssertTrue(firstSaveStarted)
+        guard firstSaveStarted else {
+            firstSave.cancel()
+            _ = await firstSave.value
+            return
+        }
+
+        XCTAssertTrue(model.isSaving)
+        let duplicateShouldDismiss = await model.saveForExit()
+        let firstShouldDismiss = await firstSave.value
+        let saveCallCount = await repository.saveCallCount
+
+        XCTAssertFalse(duplicateShouldDismiss)
+        XCTAssertTrue(firstShouldDismiss)
+        XCTAssertEqual(saveCallCount, 1)
     }
 
     func testUnavailablePreviewDoesNotBlockQueueDecision() async {
@@ -59,6 +146,37 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertNil(model.currentPreview)
         XCTAssertEqual(model.previewStatusText, "Local preview unavailable")
         XCTAssertEqual(model.session.pendingDeletionIDs, ["a"])
+    }
+
+    func testThrownPreviewErrorDoesNotBlockQueueDecisionOrDeleteAssets() async {
+        let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 1))
+        let library = MockPhotoLibraryService(
+            albums: [.init(id: "album", title: "Mock Album", photoCount: 1)],
+            assetsBySource: [
+                source: [
+                    .init(id: "a", creationDate: nil, isFavorite: false, previewSymbolName: "photo")
+                ]
+            ]
+        )
+        let repository = InMemorySessionRepository()
+        let model = CleanerViewModel(source: source, library: library, sessions: repository)
+
+        await model.load()
+        XCTAssertEqual(model.currentAsset?.id, "a")
+
+        await library.setForcedError(.forcedFailure)
+        await model.loadCurrentPreview(pixelWidth: 600, pixelHeight: 600)
+        await model.queueCurrentForDeletion()
+        let deletedBatches = await library.deletedIDBatches
+
+        XCTAssertNil(model.currentPreview)
+        XCTAssertEqual(model.previewStatusText, "Local preview unavailable")
+        XCTAssertEqual(model.session.orderedAssetIDs, ["a"])
+        XCTAssertEqual(model.session.currentPosition, 1)
+        XCTAssertEqual(model.session.decisions, ["a": .pendingDelete])
+        XCTAssertEqual(model.session.pendingDeletionIDs, ["a"])
+        XCTAssertTrue(model.session.unavailableAssetIDs.isEmpty)
+        XCTAssertTrue(deletedBatches.isEmpty)
     }
 
     func testLatePreviewCannotReplaceNewCurrentAssetPreview() async {
@@ -87,7 +205,71 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertEqual(model.currentPreview?.content, .systemSymbol("photo.fill"))
     }
 
-    func testUndecodableEncodedPreviewUsesPlaceholderWithVisibleUnavailableStatus() {
+    func testAvailableCardPresentationKeepsExistingAccessibilitySentences() {
+        let metadata = PhotoCardMetadata(
+            asset: .init(
+                id: "a",
+                creationDate: nil,
+                isFavorite: true,
+                previewSymbolName: "photo"
+            )
+        )
+        let preview = LocalPhotoPreview(content: .systemSymbol("photo"), isDegraded: false)
+
+        let presentation = PrintedPhotoCardPreviewPresentation(
+            preview: preview,
+            previewStatusText: nil,
+            metadata: metadata,
+            isFavorite: true
+        )
+
+        guard case let .systemSymbol(name) = presentation.content else {
+            return XCTFail("Available symbol preview should remain available")
+        }
+        XCTAssertEqual(name, "photo")
+        XCTAssertNil(presentation.statusText)
+        XCTAssertEqual(
+            presentation.accessibilityValue,
+            "Captured Unknown date. Location No location. Favorite."
+        )
+    }
+
+    func testNilUnavailableCardPresentationIncludesVisibleStatusInAccessibilityValue() {
+        let metadata = PhotoCardMetadata(
+            asset: .init(
+                id: "a",
+                creationDate: nil,
+                isFavorite: false,
+                previewSymbolName: "photo"
+            )
+        )
+
+        let presentation = PrintedPhotoCardPreviewPresentation(
+            preview: nil,
+            previewStatusText: "Local preview unavailable",
+            metadata: metadata,
+            isFavorite: false
+        )
+
+        guard case .placeholder = presentation.content else {
+            return XCTFail("Unavailable preview should use the placeholder")
+        }
+        XCTAssertEqual(presentation.statusText, "Local preview unavailable")
+        XCTAssertEqual(
+            presentation.accessibilityValue,
+            "Captured Unknown date. Location No location. Not favorite. Local preview unavailable."
+        )
+    }
+
+    func testUndecodableCardPresentationIncludesVisibleStatusInAccessibilityValue() {
+        let metadata = PhotoCardMetadata(
+            asset: .init(
+                id: "a",
+                creationDate: nil,
+                isFavorite: true,
+                previewSymbolName: "photo"
+            )
+        )
         let preview = LocalPhotoPreview(
             content: .encodedImageData(Data("not image data".utf8)),
             isDegraded: false
@@ -95,13 +277,19 @@ final class CleanerViewModelTests: XCTestCase {
 
         let presentation = PrintedPhotoCardPreviewPresentation(
             preview: preview,
-            previewStatusText: nil
+            previewStatusText: nil,
+            metadata: metadata,
+            isFavorite: true
         )
 
         guard case .placeholder = presentation.content else {
             return XCTFail("Undecodable image data should use the placeholder")
         }
         XCTAssertEqual(presentation.statusText, "Local preview unavailable")
+        XCTAssertEqual(
+            presentation.accessibilityValue,
+            "Captured Unknown date. Location No location. Favorite. Local preview unavailable."
+        )
     }
 
     private func waitForPreviewRequest(
@@ -116,5 +304,59 @@ final class CleanerViewModelTests: XCTestCase {
             await Task.yield()
         }
         return false
+    }
+
+    private func waitForSaveCall(in repository: ThrowingSessionRepository) async -> Bool {
+        for _ in 0..<1_000 {
+            if await repository.saveCallCount > 0 {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+}
+
+private enum ThrowingSessionRepositoryError: Error {
+    case forcedSaveFailure
+}
+
+private actor ThrowingSessionRepository: SessionRepositoryProtocol {
+    private(set) var currentSession: CleaningSession?
+    private(set) var saveCallCount = 0
+    private var shouldThrowOnSave: Bool
+    private let saveDelayNanoseconds: UInt64
+
+    init(
+        initial: CleaningSession? = nil,
+        shouldThrowOnSave: Bool = false,
+        saveDelayNanoseconds: UInt64 = 0
+    ) {
+        currentSession = initial
+        self.shouldThrowOnSave = shouldThrowOnSave
+        self.saveDelayNanoseconds = saveDelayNanoseconds
+    }
+
+    func loadCurrent() async throws -> CleaningSession? {
+        currentSession
+    }
+
+    func save(_ session: CleaningSession) async throws {
+        saveCallCount += 1
+        if saveDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: saveDelayNanoseconds)
+        }
+        if shouldThrowOnSave {
+            throw ThrowingSessionRepositoryError.forcedSaveFailure
+        }
+        currentSession = session
+    }
+
+    func removeCurrent() async throws {
+        currentSession = nil
+    }
+
+    func setShouldThrowOnSave(_ shouldThrow: Bool) {
+        shouldThrowOnSave = shouldThrow
     }
 }

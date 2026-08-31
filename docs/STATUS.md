@@ -4,36 +4,50 @@ Last updated: 2026-08-31 (Asia/Seoul)
 
 ## Completed
 
-- Initialized the Git repository on `main`.
-- Added and committed `AGENTS.md`, `CLAUDE.md`, and the product specification.
-- Approved and committed the Milestone 1 foundation design and implementation plan.
-- Created the isolated `feature/foundation` worktree at
-  `.worktrees/foundation`.
-- Installed Xcode 26.6 and selected
-  `/Applications/Xcode.app/Contents/Developer`.
+- Created the iPhone-only SwiftUI project and injectable feature-based MVVM
+  foundation on `feature/foundation`.
+- Added typed navigation for Home, source selection, Cleaner, deletion review,
+  and Settings using deterministic mock services.
+- Added framework-independent cleaning-session models, safe Keep and pending-
+  deletion decisions, undo, missing-asset handling, and in-memory save/resume.
+- Added the local-only preview protocol and deterministic mock behavior without
+  PhotoKit, CoreLocation, SwiftData, networking, geocoding, or persisted preview
+  bytes.
+- Added the printed Cleaner card with deterministic date/location labels,
+  unavailable-preview handling, Dynamic Type-friendly metadata, visible and
+  accessible Keep/Queue equivalents, and status-aware VoiceOver values.
+- Hardened Cleaner exit handling so both custom back/close controls await the
+  same guarded session save, remain onscreen after failure, and offer retry.
+- Installed Xcode 26.6 and the iOS 26.5 simulator runtime. The approved build
+  and test destination is `PhotoCleaner iPhone 13 mini`.
 
-## In progress
+## Remaining foundation checks
 
-- Xcode first-launch setup is being completed manually.
-- The iOS Simulator runtime is downloading through Xcode.
+- Complete manual iPhone 13 mini checks for the custom close/save failure and
+  retry experience, VoiceOver announcements, largest accessibility Dynamic
+  Type, metadata wrapping, rapid decisions, dark appearance, and absence of
+  photo-permission or network prompts.
+- Add a UI-test target in a later hardening milestone if automated end-to-end
+  navigation and accessibility interaction coverage is required. The current
+  project contains only the app and unit-test targets.
 
-## Not started
+## Subsequent milestones
 
-- No application source or Xcode project files have been created.
-- No Milestone 1 tests have been written or run.
+- Milestone 2: PhotoKit authorization and browsing, limited-library support,
+  library-change observation, and a production local-preview adapter with
+  network access disabled.
+- Milestone 3: production swipe-cleaner interaction, prefetching, and durable
+  session behavior.
+- Milestone 4: favorite and album mutation.
+- Milestone 5: exact deletion review and separately confirmed PhotoKit deletion.
+- Milestone 6: production hardening, profiling, localization, privacy metadata,
+  and archive validation.
 
-## Resume checks
+## Verification commands
 
-From `.worktrees/foundation`, run:
+Run from `.worktrees/foundation`:
 
 ```sh
-xcodebuild -version
-xcodebuild -checkFirstLaunchStatus
-xcrun simctl list runtimes
-xcrun simctl list devices available
+xcodebuild -project PhotoCleaner.xcodeproj -scheme PhotoCleaner -destination 'platform=iOS Simulator,name=PhotoCleaner iPhone 13 mini' build
+xcodebuild -project PhotoCleaner.xcodeproj -scheme PhotoCleaner -destination 'platform=iOS Simulator,name=PhotoCleaner iPhone 13 mini' test
 ```
-
-Proceed only when first-launch status succeeds and an iOS simulator
-runtime/device is available. Then execute Task 1 in
-`docs/superpowers/plans/2026-08-31-foundation.md` using test-driven
-development.

@@ -47,17 +47,60 @@ struct CleanerView: View {
                 Button("Album Unavailable", systemImage: "rectangle.stack.badge.plus") {}
                     .disabled(true)
                 Spacer()
-                Button("Close & Save") {
-                    Task { try? await model.save(); dismiss() }
+                Button(action: saveAndDismiss) {
+                    if model.isSaving {
+                        ProgressView()
+                            .accessibilityLabel("Saving session")
+                    } else {
+                        Text("Close & Save")
+                    }
                 }
+                .disabled(model.isSaving)
             }
         }
         .padding()
         .navigationTitle("Cleaner")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: saveAndDismiss) {
+                    Label("Close Cleaner", systemImage: "chevron.backward")
+                        .labelStyle(.iconOnly)
+                }
+                .disabled(model.isSaving)
+                .accessibilityLabel("Close and save")
+                .accessibilityHint("Saves this cleaning session before returning")
+            }
+        }
+        .alert("Could Not Save Session", isPresented: saveErrorIsPresented) {
+            Button("Retry") { saveAndDismiss() }
+            Button("Cancel", role: .cancel) { model.clearSaveError() }
+        } message: {
+            Text(model.saveErrorMessage ?? "")
+        }
         .task { await model.load() }
         .task(id: model.currentAsset?.id) {
             await model.loadCurrentPreview(pixelWidth: 900, pixelHeight: 900)
+        }
+    }
+
+    private var saveErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { model.saveErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    model.clearSaveError()
+                }
+            }
+        )
+    }
+
+    private func saveAndDismiss() {
+        Task {
+            if await model.saveForExit() {
+                dismiss()
+            }
         }
     }
 }

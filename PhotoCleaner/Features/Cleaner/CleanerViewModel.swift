@@ -12,7 +12,9 @@ final class CleanerViewModel {
     private(set) var session: CleaningSession
     private(set) var assets: [PhotoAsset] = []
     private(set) var isLoading = false
+    private(set) var isSaving = false
     private(set) var errorMessage: String?
+    private(set) var saveErrorMessage: String?
     private(set) var currentPreview: LocalPhotoPreview?
     private(set) var previewStatusText: String?
 
@@ -84,8 +86,24 @@ final class CleanerViewModel {
         }
     }
 
-    func save() async throws {
-        try await sessions.save(session)
+    func saveForExit() async -> Bool {
+        guard !isSaving else { return false }
+
+        isSaving = true
+        saveErrorMessage = nil
+        defer { isSaving = false }
+
+        do {
+            try await sessions.save(session)
+            return true
+        } catch {
+            saveErrorMessage = "This cleaning session could not be saved. Please try again."
+            return false
+        }
+    }
+
+    func clearSaveError() {
+        saveErrorMessage = nil
     }
 
     func loadCurrentPreview(pixelWidth: Int, pixelHeight: Int) async {

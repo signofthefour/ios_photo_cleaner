@@ -53,9 +53,28 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         )
         let album = PhotoAlbum(id: "album", title: "Mock Album", photoCount: 3)
         let assets = [
-            PhotoAsset(id: "asset-1", creationDate: interval.start, isFavorite: false, previewSymbolName: "photo"),
-            PhotoAsset(id: "asset-2", creationDate: interval.start.addingTimeInterval(60), isFavorite: true, previewSymbolName: "photo.fill"),
-            PhotoAsset(id: "asset-3", creationDate: interval.start.addingTimeInterval(120), isFavorite: false, previewSymbolName: "mountain.2")
+            PhotoAsset(
+                id: "asset-1",
+                creationDate: interval.start,
+                isFavorite: false,
+                previewSymbolName: "photo",
+                latitude: 37.5665,
+                longitude: 126.9780
+            ),
+            PhotoAsset(
+                id: "asset-2",
+                creationDate: interval.start.addingTimeInterval(60),
+                isFavorite: true,
+                previewSymbolName: "photo.fill",
+                latitude: 40.7128,
+                longitude: -74.0060
+            ),
+            PhotoAsset(
+                id: "asset-3",
+                creationDate: interval.start.addingTimeInterval(120),
+                isFavorite: false,
+                previewSymbolName: "mountain.2"
+            )
         ]
         return MockPhotoLibraryService(
             timelineGroups: [timeline],

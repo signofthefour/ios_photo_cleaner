@@ -25,6 +25,34 @@ close and save.
 A cleaning gesture changes session metadata only. It never deletes a
 photo from the library.
 
+### Image loading
+
+The keep/delete decision does not depend on original-quality pixels, so
+the card renders whichever image data PhotoKit already holds locally.
+Requests must disable network access (`isNetworkAccessAllowed = false`)
+so that reviewing a cloud-optimized asset never triggers an iCloud
+download. If only a thumbnail or a degraded local rendition is cached,
+that is what is shown; the app does not wait for or request original
+quality.
+
+### Card frame
+
+Each card renders the photo inside a white border styled like a printed
+photograph, with a heavier white margin along the bottom edge. That
+bottom margin holds two data points as text: capture date (`dd/MM/yy`)
+on the left, and location on the right. Both must also be exposed as
+accessible labels, not conveyed by the frame graphic alone.
+
+For the foundation implementation, location is displayed as locally
+available latitude and longitude without reverse geocoding or any
+network request. Missing metadata uses `Unknown date` and `No location`
+in both visible and accessible text.
+
+The foundation adds a mockable local-preview contract and deterministic
+mock behavior. The production PhotoKit adapter that enforces
+`isNetworkAccessAllowed = false` belongs to Milestone 2, when real photo
+authorization and browsing are introduced.
+
 ## Album picker
 
 The album picker supports search, existing-membership checkmarks, adding

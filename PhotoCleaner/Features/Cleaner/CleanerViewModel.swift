@@ -93,7 +93,6 @@ final class CleanerViewModel {
         let generation = previewGeneration
         guard let assetID = currentAsset?.id else {
             currentPreview = nil
-            previewStatusText = nil
             return
         }
 

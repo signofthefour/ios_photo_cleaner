@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import PhotoCleaner
 
@@ -8,9 +9,15 @@ final class SafetyInvariantTests: XCTestCase {
         let repository = InMemorySessionRepository()
         let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 3))
         let cleaner = CleanerViewModel(source: source, library: library, sessions: repository)
+        let undecodablePreview = LocalPhotoPreview(
+            content: .encodedImageData(Data("not image data".utf8)),
+            isDegraded: false
+        )
 
+        await library.setPreview(undecodablePreview, for: "asset-1")
         await cleaner.load()
         await cleaner.loadCurrentPreview(pixelWidth: 600, pixelHeight: 600)
+        XCTAssertEqual(cleaner.currentPreview, undecodablePreview)
         await cleaner.keepCurrent()
         await cleaner.loadCurrentPreview(pixelWidth: 600, pixelHeight: 600)
         await cleaner.queueCurrentForDeletion()

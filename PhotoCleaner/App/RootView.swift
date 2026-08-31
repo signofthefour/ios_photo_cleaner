@@ -1,9 +1,36 @@
 import SwiftUI
 
+@MainActor
 struct RootView: View {
+    private let container: AppContainer
+    @State private var router = AppRouter()
+
+    init(container: AppContainer = .liveMock) {
+        self.container = container
+    }
+
     var body: some View {
-        NavigationStack {
-            Text("Photo Cleaner")
+        NavigationStack(path: $router.path) {
+            HomeView(model: container.makeHomeViewModel()) { route in
+                router.navigate(to: route)
+            }
+            .navigationDestination(for: AppRoute.self) { route in
+                destination(for: route)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: AppRoute) -> some View {
+        switch route {
+        case .sourcePicker:
+            Text("Source Picker")
+        case .cleaner:
+            Text("Cleaner")
+        case .deletionReview:
+            Text("Deletion Review")
+        case .settings:
+            Text("Settings")
         }
     }
 }

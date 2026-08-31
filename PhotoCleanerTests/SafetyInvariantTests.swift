@@ -10,7 +10,9 @@ final class SafetyInvariantTests: XCTestCase {
         let cleaner = CleanerViewModel(source: source, library: library, sessions: repository)
 
         await cleaner.load()
+        await cleaner.loadCurrentPreview(pixelWidth: 600, pixelHeight: 600)
         await cleaner.keepCurrent()
+        await cleaner.loadCurrentPreview(pixelWidth: 600, pixelHeight: 600)
         await cleaner.queueCurrentForDeletion()
         cleaner.undo()
         await cleaner.queueCurrentForDeletion()

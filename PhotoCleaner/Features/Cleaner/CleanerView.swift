@@ -17,21 +17,18 @@ struct CleanerView: View {
                 ContentUnavailableView("Could Not Load Photo", systemImage: "exclamationmark.triangle", description: Text(message))
             } else if let asset = model.currentAsset {
                 Text(model.progressText).font(.headline)
-                Image(systemName: asset.previewSymbolName)
-                    .resizable().scaledToFit().padding(50)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 24))
-                    .accessibilityLabel("Mock photo preview")
-                    .accessibilityValue(asset.isFavorite ? "Favorite" : "Not favorite")
-                    .accessibilityAction(named: "Keep Photo") { Task { await model.keepCurrent() } }
-                    .accessibilityAction(named: "Queue for Deletion") { Task { await model.queueCurrentForDeletion() } }
+                PrintedPhotoCard(
+                    preview: model.currentPreview,
+                    metadata: PhotoCardMetadata(asset: asset),
+                    previewStatusText: model.previewStatusText,
+                    isFavorite: asset.isFavorite,
+                    keepAction: { Task { await model.keepCurrent() } },
+                    queueAction: { Task { await model.queueCurrentForDeletion() } }
+                )
                     .gesture(DragGesture().onEnded { value in
                         if value.translation.width > 60 { Task { await model.keepCurrent() } }
                         if value.translation.width < -60 { Task { await model.queueCurrentForDeletion() } }
                     })
-                if let date = asset.creationDate {
-                    Text(date.formatted(date: .abbreviated, time: .shortened))
-                }
                 Label(asset.isFavorite ? "Favorite" : "Not Favorite", systemImage: asset.isFavorite ? "heart.fill" : "heart")
                 HStack {
                     Button("Queue for Deletion", systemImage: "trash") { Task { await model.queueCurrentForDeletion() } }
@@ -59,5 +56,8 @@ struct CleanerView: View {
         .navigationTitle("Cleaner")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
+        .task(id: model.currentAsset?.id) {
+            await model.loadCurrentPreview(pixelWidth: 900, pixelHeight: 900)
+        }
     }
 }

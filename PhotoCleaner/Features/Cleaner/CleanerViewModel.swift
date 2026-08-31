@@ -7,11 +7,14 @@ final class CleanerViewModel {
     private let source: CleaningSource
     private let library: any PhotoLibraryServiceProtocol
     private let sessions: any SessionRepositoryProtocol
+    private var previewGeneration = 0
 
     private(set) var session: CleaningSession
     private(set) var assets: [PhotoAsset] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
+    private(set) var currentPreview: LocalPhotoPreview?
+    private(set) var previewStatusText: String?
 
     init(
         source: CleaningSource,
@@ -42,6 +45,7 @@ final class CleanerViewModel {
     }
 
     func load() async {
+        invalidatePreview()
         isLoading = true
         errorMessage = nil
         do {
@@ -73,20 +77,64 @@ final class CleanerViewModel {
     }
 
     func undo() {
+        let previousAssetID = currentAsset?.id
         _ = session.undoLastDecision()
+        if currentAsset?.id != previousAssetID {
+            invalidatePreview()
+        }
     }
 
     func save() async throws {
         try await sessions.save(session)
     }
 
+    func loadCurrentPreview(pixelWidth: Int, pixelHeight: Int) async {
+        previewGeneration += 1
+        let generation = previewGeneration
+        guard let assetID = currentAsset?.id else {
+            currentPreview = nil
+            previewStatusText = nil
+            return
+        }
+
+        do {
+            let request = PhotoPreviewRequest(
+                assetID: assetID,
+                pixelWidth: pixelWidth,
+                pixelHeight: pixelHeight
+            )
+            let preview = try await library.fetchLocalPreview(for: request)
+            guard generation == previewGeneration, currentAsset?.id == assetID else { return }
+            currentPreview = preview
+            previewStatusText = preview == nil ? "Local preview unavailable" : nil
+        } catch is CancellationError {
+            return
+        } catch {
+            guard generation == previewGeneration, currentAsset?.id == assetID else { return }
+            currentPreview = nil
+            previewStatusText = "Local preview unavailable"
+        }
+    }
+
     private func decideCurrent(_ decision: PhotoDecision) {
         guard let currentAsset else { return }
+        let previousAssetID = currentAsset.id
         do {
             try session.decide(decision, assetID: currentAsset.id)
             skipUnavailableCurrentAssets()
+            if self.currentAsset?.id != previousAssetID {
+                invalidatePreview(clearStatus: self.currentAsset != nil)
+            }
         } catch {
             errorMessage = "That photo could not be updated. Please try again."
+        }
+    }
+
+    private func invalidatePreview(clearStatus: Bool = true) {
+        previewGeneration += 1
+        currentPreview = nil
+        if clearStatus {
+            previewStatusText = nil
         }
     }
 

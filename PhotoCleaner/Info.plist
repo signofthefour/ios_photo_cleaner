@@ -20,6 +20,8 @@
     <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Photo Cleaner needs access to your photo library so you can review your photos and choose which to keep or queue for deletion. Nothing is deleted without a separate confirmation.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UISupportedInterfaceOrientations</key>

@@ -18,6 +18,15 @@ final class AppContainer {
         )
     }
 
+    /// Backed by the real photo library via PhotoKit. Session persistence
+    /// remains in-memory only; durable resume is a later milestone.
+    static var live: AppContainer {
+        AppContainer(
+            library: PhotoKitPhotoLibraryService(),
+            sessions: InMemorySessionRepository()
+        )
+    }
+
     func makeHomeViewModel() -> HomeViewModel {
         HomeViewModel(library: library, sessions: sessions)
     }

@@ -37,6 +37,19 @@ Last updated: 2026-09-01 (Asia/Seoul)
   public API, session/decision logic, gesture math, or accessibility
   labels/hints/actions changed; only presentation.
 
+- Added the real PhotoKit-backed `PhotoLibraryServiceProtocol` implementation
+  on `feature/photo-library` (branched from `feature/foundation`):
+  `PHPhotoLibrary.requestAuthorization(for: .readWrite)` for authorization,
+  month-bucketed timeline groups (image assets only) via the pure
+  `PhotoTimelineGrouping`, user-album browsing via `PHAssetCollection`
+  (`.albumRegular`, non-empty only), and a cancellation-safe local-preview
+  loader (`isNetworkAccessAllowed = false`, first `.opportunistic` result
+  only). `NSPhotoLibraryUsageDescription` added to `Info.plist`.
+  `setFavorite`/`addAsset`/`createAlbum`/`deleteAssets` intentionally throw
+  `.notImplemented` — those are Milestones 4 and 5, and none are reachable
+  from the UI yet. `PhotoCleanerApp` now composes `AppContainer.live`. See
+  `docs/superpowers/specs/2026-09-01-photo-library-design.md`.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -79,7 +92,7 @@ xcodebuild -project PhotoCleaner.xcodeproj -scheme PhotoCleaner -destination 'pl
 ## Latest verification
 
 Verified on 2026-09-01 using Xcode 26.6 and the `PhotoCleaner iPhone 13 mini`
-simulator, after the visual design pass above:
+simulator, after the visual design pass on `feature/foundation`:
 
 - The specified build command exited 0 with `** BUILD SUCCEEDED **`.
 - The specified unit-test command exited 0 with `** TEST SUCCEEDED **`; 43
@@ -93,3 +106,18 @@ simulator, after the visual design pass above:
   review only; manually walking every screen on-device remains a remaining
   check below.
 - No UI-test target exists, so automated UI tests were not run.
+
+Verified again on 2026-09-01 on `feature/photo-library`, after adding the
+PhotoKit adapter:
+
+- Build and unit-test commands both exited 0 (`** BUILD SUCCEEDED **`,
+  `** TEST SUCCEEDED **`); 49 tests passed with zero failures (43 prior plus
+  6 new: `PhotoTimelineGroupingTests` and `PhotoKitAuthorizationMappingTests`).
+- `rg` confirmed no `SwiftData` imports, no `deleteAssets`/`setFavorite`/
+  `addAsset`/`createAlbum` calls outside `Services`, and that
+  `isNetworkAccessAllowed = false` is present in the preview-loading code.
+- Not yet verified: the real authorization prompt and every access-state
+  outcome, timeline/album browsing against an actual seeded library, preview
+  rendering for cached vs. cloud-optimized assets, and confirming no network
+  access while offline — all require interactive on-device/simulator use
+  this session did not perform.

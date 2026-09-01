@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct PhotoCleanerApp: App {
-    private let container = AppContainer.liveMock
+    private let container = AppContainer.live
 
     var body: some Scene {
         WindowGroup {

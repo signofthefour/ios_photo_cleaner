@@ -138,6 +138,23 @@ Last updated: 2026-09-01 (Asia/Seoul)
   it shipped. Audited every other `CleaningSession` construction and
   mutating method afterward — no other invariant mismatch found.
 
+- Delivered Milestone 4 on `feature/favorites-albums` (branched from
+  `main`): `PhotoKitPhotoLibraryService.setFavorite`/`addAsset`/
+  `createAlbum` are real `PHAssetChangeRequest`/
+  `PHAssetCollectionChangeRequest` calls instead of `.notImplemented`
+  stubs. `PhotoLibraryServiceProtocol` gained
+  `albumIDs(containingAssetID:)` (via `PHAssetCollection
+  .fetchAssetCollectionsContaining(_:with:options:)`) for the album
+  picker's existing-membership checkmarks. The Cleaner's favorite label
+  is now a button (`CleanerViewModel.toggleFavorite()`: optimistic flip,
+  rolls back and shows a recoverable error on failure), and its Album
+  button opens a new `AlbumPickerView` sheet — search, existing-
+  membership checkmarks, add (optimistic with the same rollback
+  pattern), and album creation (which auto-adds the current photo, since
+  that's the reason the sheet was opened). Deletion and session logic
+  are untouched. See
+  `docs/superpowers/specs/2026-09-01-favorites-albums-design.md`.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -173,9 +190,9 @@ status per milestone rather than "what's left, in order."
   prefetching the visible three-card window — was built ahead of
   schedule on `feature/foundation`; durable session persistence (SwiftData)
   was added on `feature/swipe-cleaner` to close the gap.
-- Milestone 4 (Favorites and albums): not started.
-  `setFavorite`/`addAsset`/`createAlbum` all throw `.notImplemented` and
-  are unreachable from the UI.
+- Milestone 4 (Favorites and albums): complete as of this session.
+  `setFavorite`/`addAsset`/`createAlbum` are real, and the Cleaner's
+  favorite toggle and Add to Album sheet are wired up and reachable.
 - Milestone 5 (Safe deletion): the core is done — exact review set,
   restoration, a confirmed real PhotoKit delete request (behind both an
   in-app and the native iOS confirmation), and post-success session
@@ -312,3 +329,20 @@ already-corrupted on-disk session to match. Build and unit-test commands
 both exited 0; 79 tests passed with zero failures (78 prior plus 1 new
 `CleanerViewModelTests` case). Still not yet verified on-device: haptics,
 VoiceOver, Dynamic Type, and a full force-quit/relaunch resume check.
+
+Verified again after delivering Milestone 4: build and unit-test commands
+both exited 0 (`** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`); 92 tests
+passed with zero failures (79 prior plus 2 new `MockServicesTests` cases,
+2 new `CleanerViewModelTests` cases, and 9 new
+`AlbumPickerViewModelTests` cases). `rg` confirmed `deleteAssets` is
+still called from exactly one place and `SwiftData` imports remain
+confined to `Persistence/` and `AppContainer.swift`.
+`PhotoKitPhotoLibraryService`'s three real mutation implementations and
+`albumIDs(containingAssetID:)` remain untestable in isolation (`PHAsset`/
+`PHAssetCollection` have no public initializer), same as `deleteAssets`
+already was — correctness rests on code review plus the manual checks
+below. Not yet verified on-device: real favorite toggle (including a
+forced-failure path, which needs an actual PhotoKit error and isn't
+scriptable), the album picker's search and existing-membership
+checkmarks against real album contents, album creation, and
+VoiceOver/Dynamic Type on the new sheet.

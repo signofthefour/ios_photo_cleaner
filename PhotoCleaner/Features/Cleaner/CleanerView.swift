@@ -4,6 +4,7 @@ import SwiftUI
 struct CleanerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: CleanerViewModel
+    @State private var isPresentingAlbumPicker = false
 
     init(model: CleanerViewModel) {
         _model = State(initialValue: model)
@@ -29,11 +30,16 @@ struct CleanerView: View {
                     keepAction: { await model.keepCurrent() },
                     queueAction: { await model.queueCurrentForDeletion() }
                 )
-                Label(asset.isFavorite ? "Favorite" : "Not Favorite", systemImage: asset.isFavorite ? "heart.fill" : "heart")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(
-                        asset.isFavorite ? PhotoCleanerTheme.Palette.delete : PhotoCleanerTheme.Palette.inkSoft
-                    )
+                Button {
+                    Task { await model.toggleFavorite() }
+                } label: {
+                    Label(asset.isFavorite ? "Favorite" : "Not Favorite", systemImage: asset.isFavorite ? "heart.fill" : "heart")
+                }
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(
+                    asset.isFavorite ? PhotoCleanerTheme.Palette.delete : PhotoCleanerTheme.Palette.inkSoft
+                )
+                .accessibilityHint(asset.isFavorite ? "Removes this photo from favorites" : "Marks this photo as a favorite")
             } else {
                 ContentUnavailableView("Review Complete", systemImage: "checkmark.circle", description: Text("Review pending deletions before confirming anything."))
             }
@@ -42,9 +48,11 @@ struct CleanerView: View {
                 Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
                     .buttonStyle(CleanerCircularButtonStyle(tint: PhotoCleanerTheme.Palette.inkSoft, isBordered: false))
                     .disabled(model.session.currentPosition == 0)
-                Button("Album Unavailable", systemImage: "rectangle.stack.badge.plus") {}
-                    .buttonStyle(CleanerCircularButtonStyle(tint: PhotoCleanerTheme.Palette.inkSoft, isBordered: false))
-                    .disabled(true)
+                Button("Add to Album", systemImage: "rectangle.stack.badge.plus") {
+                    isPresentingAlbumPicker = true
+                }
+                .buttonStyle(CleanerCircularButtonStyle(tint: PhotoCleanerTheme.Palette.inkSoft, isBordered: false))
+                .disabled(model.currentAsset == nil)
                 Spacer()
                 Button(action: saveAndDismiss) {
                     if model.isSaving {
@@ -80,6 +88,21 @@ struct CleanerView: View {
             Button("Cancel", role: .cancel) { model.clearSaveError() }
         } message: {
             Text(model.saveErrorMessage ?? "")
+        }
+        .alert("Could Not Update Favorite", isPresented: Binding(
+            get: { model.favoriteErrorMessage != nil },
+            set: { if !$0 { model.clearFavoriteError() } }
+        )) {
+            Button("OK") {}
+        } message: {
+            Text(model.favoriteErrorMessage ?? "")
+        }
+        .sheet(isPresented: $isPresentingAlbumPicker) {
+            if let assetID = model.currentAsset?.id {
+                NavigationStack {
+                    AlbumPickerView(model: model.makeAlbumPickerViewModel(assetID: assetID))
+                }
+            }
         }
         .task { await model.load() }
         .task(id: model.currentAsset?.id) {

@@ -19,6 +19,41 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertEqual(model.visibleCards.map(\.id), ["asset-2", "asset-3"])
     }
 
+    func testToggleFavoriteIsOptimisticAndPersists() async throws {
+        let library = MockPhotoLibraryService.sample
+        let model = CleanerViewModel(
+            source: .album(.init(id: "album", title: "Mock Album", photoCount: 3)),
+            library: library,
+            sessions: InMemorySessionRepository()
+        )
+        await model.load()
+        XCTAssertEqual(model.currentAsset?.isFavorite, false)
+
+        await model.toggleFavorite()
+
+        XCTAssertEqual(model.currentAsset?.isFavorite, true)
+        let mutations = await library.favoriteMutations
+        XCTAssertEqual(mutations, [.init(assetID: "asset-1", isFavorite: true)])
+    }
+
+    func testFailedFavoriteToggleRollsBackAndShowsError() async throws {
+        let library = MockPhotoLibraryService.sample
+        let model = CleanerViewModel(
+            source: .album(.init(id: "album", title: "Mock Album", photoCount: 3)),
+            library: library,
+            sessions: InMemorySessionRepository()
+        )
+        await model.load()
+        await library.setForcedError(.forcedFailure)
+
+        await model.toggleFavorite()
+
+        XCTAssertEqual(model.currentAsset?.isFavorite, false)
+        XCTAssertNotNil(model.favoriteErrorMessage)
+        let mutations = await library.favoriteMutations
+        XCTAssertTrue(mutations.isEmpty)
+    }
+
     func testLoadVisiblePreviewsRequestsAllThreeCardsAndAcceptsDegradedResult() async {
         let library = MockPhotoLibraryService.sample
         await library.setPreview(

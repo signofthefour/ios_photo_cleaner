@@ -43,6 +43,7 @@ final class CleanerViewModel {
     private(set) var isSaving = false
     private(set) var errorMessage: String?
     private(set) var saveErrorMessage: String?
+    private(set) var favoriteErrorMessage: String?
 
     init(
         source: CleaningSource,
@@ -174,6 +175,32 @@ final class CleanerViewModel {
 
     func clearSaveError() {
         saveErrorMessage = nil
+    }
+
+    /// Flips `isFavorite` immediately, then confirms with PhotoKit; a
+    /// failure flips it back and surfaces a recoverable error. Unlike
+    /// keep/queue decisions, favorite status lives entirely in the photo
+    /// library, not in `CleaningSession` — there is nothing to save here.
+    func toggleFavorite() async {
+        guard let assetID = currentAsset?.id,
+              let index = assets.firstIndex(where: { $0.id == assetID }) else { return }
+        let newValue = !assets[index].isFavorite
+        assets[index].isFavorite = newValue
+        favoriteErrorMessage = nil
+        do {
+            try await library.setFavorite(newValue, assetID: assetID)
+        } catch {
+            assets[index].isFavorite = !newValue
+            favoriteErrorMessage = "This photo's favorite status could not be updated. Please try again."
+        }
+    }
+
+    func clearFavoriteError() {
+        favoriteErrorMessage = nil
+    }
+
+    func makeAlbumPickerViewModel(assetID: String) -> AlbumPickerViewModel {
+        AlbumPickerViewModel(assetID: assetID, library: library)
     }
 
     /// Re-fetches this source's assets and re-applies the existing

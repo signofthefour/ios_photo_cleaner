@@ -155,6 +155,18 @@ Last updated: 2026-09-01 (Asia/Seoul)
   are untouched. See
   `docs/superpowers/specs/2026-09-01-favorites-albums-design.md`.
 
+- Closed out Milestone 5's last open item: unavailable-asset handling in
+  Deletion Review had already been implemented (`PhotoKitPhotoLibraryService
+  .deleteAssets` only fetches ids that still resolve to a `PHAsset` and
+  succeeds regardless of ids that don't) but had no test coverage, since
+  the mock had no way to model an id no longer existing.
+  `MockPhotoLibraryService.deleteAssets` now mirrors the real
+  implementation's exact shape — filter out ids marked missing via the
+  new `setMissingAssetIDs(_:)`, then succeed even if that leaves nothing
+  left to delete — and two new `DeletionReviewViewModelTests` cases
+  confirm a disappeared id (and every id disappearing at once) still
+  resolves out of the pending queue rather than surfacing as a failure.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -193,13 +205,18 @@ status per milestone rather than "what's left, in order."
 - Milestone 4 (Favorites and albums): complete as of this session.
   `setFavorite`/`addAsset`/`createAlbum` are real, and the Cleaner's
   favorite toggle and Add to Album sheet are wired up and reachable.
-- Milestone 5 (Safe deletion): the core is done — exact review set,
-  restoration, a confirmed real PhotoKit delete request (behind both an
-  in-app and the native iOS confirmation), and post-success session
-  updates. Not verified: an id that disappears from the library between
-  being queued and being confirmed (the code treats it as already-deleted
-  rather than an error, but this has not been exercised against a real
-  disappearing asset).
+- Milestone 5 (Safe deletion): complete as of this session — exact
+  review set, restoration, a confirmed real PhotoKit delete request
+  (behind both an in-app and the native iOS confirmation), post-success
+  session updates, and unavailable-asset handling. The last item
+  (an id that disappears from the library between being queued and
+  being confirmed) was already implemented correctly but had zero test
+  coverage, since `MockPhotoLibraryService.deleteAssets` had no concept
+  of an id no longer existing. It now mirrors the real implementation's
+  exact shape (silently drop ids that don't resolve, succeed regardless,
+  including when that leaves nothing to actually delete), seedable via
+  `setMissingAssetIDs(_:)`; on-device confirmation with a real
+  disappearing asset remains a manual check.
 - Milestone 6 (Production hardening): not started.
 
 ## Verification commands
@@ -346,3 +363,12 @@ forced-failure path, which needs an actual PhotoKit error and isn't
 scriptable), the album picker's search and existing-membership
 checkmarks against real album contents, album creation, and
 VoiceOver/Dynamic Type on the new sheet.
+
+Verified again after closing out Milestone 5's unavailable-asset-handling
+test gap: build and unit-test commands both exited 0
+(`** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`); 94 tests passed with
+zero failures (92 prior plus 2 new `DeletionReviewViewModelTests` cases).
+`rg` confirmed `deleteAssets` is still called from exactly one place.
+Not yet verified on-device: deleting a queued photo via the system
+Photos app while Deletion Review is open, then confirming, to see the
+real behavior this test models.

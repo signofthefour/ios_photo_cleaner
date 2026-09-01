@@ -22,6 +22,7 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
     private var previewsByAssetID: [String: LocalPhotoPreview]
     private var previewDelayNanosecondsByAssetID: [String: UInt64] = [:]
     private var assetIDsByAlbumID: [String: Set<String>] = [:]
+    private var missingAssetIDs: Set<String> = []
     private var forcedError: MockPhotoLibraryError?
     private let changeBroadcaster = PhotoLibraryChangeBroadcaster()
 
@@ -130,6 +131,13 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         assetIDsByAlbumID[albumID] = assetIDs
     }
 
+    /// Marks ids as already gone from the library (deleted elsewhere before
+    /// a queued deletion is confirmed), matching what
+    /// `PHAsset.fetchAssets(withLocalIdentifiers:)` would silently drop.
+    func setMissingAssetIDs(_ ids: Set<String>) {
+        missingAssetIDs = ids
+    }
+
     /// Simulates a library change (an asset added/removed/edited elsewhere)
     /// for tests: emits on `libraryChanges` without altering any fetch
     /// result itself — pair with `setAssets`/`setAlbums` to change what a
@@ -190,9 +198,15 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         return PhotoAlbum(id: "created-\(createdAlbumNames.count)", title: name, photoCount: 0)
     }
 
+    /// Mirrors `PhotoKitPhotoLibraryService.deleteAssets`'s exact shape: an
+    /// id that no longer resolves to a real asset is silently dropped
+    /// rather than causing a failure, and the whole call still succeeds
+    /// even if that leaves nothing left to actually delete.
     func deleteAssets(ids: [String]) async throws {
         try throwIfForced()
-        deletedIDBatches.append(ids)
+        let idsToDelete = ids.filter { !missingAssetIDs.contains($0) }
+        guard !idsToDelete.isEmpty else { return }
+        deletedIDBatches.append(idsToDelete)
     }
 
     private func throwIfForced() throws {

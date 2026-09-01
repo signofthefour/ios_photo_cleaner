@@ -85,6 +85,46 @@ final class DeletionReviewViewModelTests: XCTestCase {
         XCTAssertEqual(saved?.pendingDeletionIDs, [])
     }
 
+    /// The "unavailable-asset handling" part of Milestone 5's scope: an id
+    /// that disappears from the library between being queued and being
+    /// confirmed (deleted elsewhere) is treated as already-deleted rather
+    /// than an error, so the whole batch still succeeds and every
+    /// originally-selected id resolves out of the pending queue.
+    func testConfirmDeletionResolvesAnIDThatAlreadyDisappearedFromTheLibrary() async throws {
+        let library = MockPhotoLibraryService.sample
+        await library.setMissingAssetIDs(["a"])
+        let repository = InMemorySessionRepository(initial: .fixturePendingDeletion(ids: ["a", "b"]))
+        let model = DeletionReviewViewModel(library: library, sessions: repository)
+
+        await model.load()
+        await model.confirmDeletion()
+
+        let deletedBatches = await library.deletedIDBatches
+        XCTAssertEqual(deletedBatches, [["b"]])
+        XCTAssertTrue(model.pendingIDs.isEmpty)
+        XCTAssertNil(model.deletionErrorMessage)
+        XCTAssertEqual(model.deletionSummaryMessage, "2 photos deleted.")
+        let saved = try await repository.loadCurrent()
+        XCTAssertEqual(saved?.pendingDeletionIDs, [])
+    }
+
+    func testConfirmDeletionSucceedsWhenEveryQueuedIDHasAlreadyDisappeared() async throws {
+        let library = MockPhotoLibraryService.sample
+        await library.setMissingAssetIDs(["a", "b"])
+        let repository = InMemorySessionRepository(initial: .fixturePendingDeletion(ids: ["a", "b"]))
+        let model = DeletionReviewViewModel(library: library, sessions: repository)
+
+        await model.load()
+        await model.confirmDeletion()
+
+        let deletedBatches = await library.deletedIDBatches
+        XCTAssertTrue(deletedBatches.isEmpty)
+        XCTAssertTrue(model.pendingIDs.isEmpty)
+        XCTAssertNil(model.deletionErrorMessage)
+        let saved = try await repository.loadCurrent()
+        XCTAssertEqual(saved?.pendingDeletionIDs, [])
+    }
+
     func testFailedDeletionLeavesQueueAndSessionUnchanged() async throws {
         let library = MockPhotoLibraryService.sample
         await library.setForcedError(.forcedFailure)

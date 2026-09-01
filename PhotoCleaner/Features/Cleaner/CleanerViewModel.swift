@@ -211,7 +211,18 @@ final class CleanerViewModel {
     /// a failed refresh is silently ignored rather than surfaced, since
     /// this runs in the background and the current session state remains
     /// valid either way.
+    ///
+    /// Skipped for `.random`: a timeline range or an album re-fetch always
+    /// returns every current member of that fixed source, so an id that's
+    /// missing from it really was deleted. A random fetch draws a fresh
+    /// sample every call, so re-running it here would swap the session's
+    /// whole asset list for an unrelated one and make the current photo
+    /// look deleted just because this particular draw didn't include it —
+    /// not because it's actually gone. A genuinely deleted asset in a
+    /// random session still surfaces safely via the existing "Local
+    /// preview unavailable" path when its preview is requested.
     func handleLibraryChange() async {
+        if case .random = source { return }
         guard let refreshedAssets = try? await library.fetchAssets(for: source) else { return }
         assets = refreshedAssets
         skipUnavailableCurrentAssets()

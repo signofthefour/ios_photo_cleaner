@@ -213,6 +213,39 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertEqual(model.session.decisions["r1"], .keep)
     }
 
+    /// Regression test: `.random` draws a fresh sample every fetch, so a
+    /// library-change notification (which can fire for reasons unrelated
+    /// to deletion, e.g. a background iCloud metadata sync) must not
+    /// re-fetch and swap out the session's asset list — that would make
+    /// the current photo look "deleted" just because this draw excluded
+    /// it, silently advancing the session with no swipe from the user.
+    func testHandleLibraryChangeDoesNotReshuffleRandomSession() async {
+        let original = [
+            PhotoAsset(id: "r1", creationDate: nil, isFavorite: false, previewSymbolName: "photo"),
+            PhotoAsset(id: "r2", creationDate: nil, isFavorite: false, previewSymbolName: "photo")
+        ]
+        let library = MockPhotoLibraryService(assetsBySource: [.random: original])
+        let model = CleanerViewModel(source: .random, library: library, sessions: InMemorySessionRepository())
+
+        await model.load()
+        XCTAssertEqual(model.currentAsset?.id, "r1")
+
+        // A subsequent random draw returning a completely different sample
+        // (as a real re-shuffle would) must not affect the in-progress session.
+        await library.setAssets(
+            [
+                .init(id: "r3", creationDate: nil, isFavorite: false, previewSymbolName: "photo"),
+                .init(id: "r4", creationDate: nil, isFavorite: false, previewSymbolName: "photo")
+            ],
+            for: .random
+        )
+
+        await model.handleLibraryChange()
+
+        XCTAssertEqual(model.currentAsset?.id, "r1")
+        XCTAssertTrue(model.session.unavailableAssetIDs.isEmpty)
+    }
+
     func testCompletedSessionStartsFreshAndCarriesForwardPendingDeletion() async throws {
         let library = MockPhotoLibraryService.sample
         let repository = InMemorySessionRepository()

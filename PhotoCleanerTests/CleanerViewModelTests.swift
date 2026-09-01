@@ -95,6 +95,40 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertEqual(model.progressText, "1 of 3")
     }
 
+    func testProgressFractionReflectsDecidedPortionOfSession() async {
+        let library = MockPhotoLibraryService.sample
+        let model = CleanerViewModel(
+            source: .album(.init(id: "album", title: "Mock Album", photoCount: 3)),
+            library: library,
+            sessions: InMemorySessionRepository()
+        )
+
+        await model.load()
+        XCTAssertEqual(model.progressFraction, 0)
+
+        await model.keepCurrent()
+        XCTAssertEqual(model.progressFraction, 1.0 / 3.0, accuracy: 0.0001)
+
+        await model.keepCurrent()
+        await model.keepCurrent()
+        XCTAssertEqual(model.progressFraction, 1)
+    }
+
+    func testProgressFractionIsZeroForEmptySession() async {
+        let library = MockPhotoLibraryService(
+            albums: [.init(id: "empty", title: "Empty Album", photoCount: 0)],
+            assetsBySource: [.album(.init(id: "empty", title: "Empty Album", photoCount: 0)): []]
+        )
+        let model = CleanerViewModel(
+            source: .album(.init(id: "empty", title: "Empty Album", photoCount: 0)),
+            library: library,
+            sessions: InMemorySessionRepository()
+        )
+
+        await model.load()
+        XCTAssertEqual(model.progressFraction, 0)
+    }
+
     func testSaveCanBeLoadedByNewViewModel() async throws {
         let library = MockPhotoLibraryService.sample
         let repository = InMemorySessionRepository()

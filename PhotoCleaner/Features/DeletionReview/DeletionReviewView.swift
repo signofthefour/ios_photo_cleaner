@@ -21,16 +21,46 @@ struct DeletionReviewView: View {
             } else {
                 ScrollView {
                     Text("Review every identifier below before any future deletion request.")
-                        .font(.callout).padding(.horizontal)
+                        .font(.callout)
+                        .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+                        .padding(.horizontal)
+                        .padding(.top, PhotoCleanerTheme.spacing)
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(model.pendingIDs, id: \.self) { id in
-                            VStack {
-                                Image(systemName: "photo").font(.largeTitle)
-                                Text(id).font(.caption).lineLimit(2)
+                            VStack(spacing: 6) {
+                                ZStack(alignment: .topTrailing) {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(PhotoCleanerTheme.Palette.line)
+                                        .aspectRatio(1, contentMode: .fit)
+                                        .overlay {
+                                            Image(systemName: "photo")
+                                                .font(.title2)
+                                                .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+                                        }
+
+                                    if model.selectedIDs.contains(id) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.callout)
+                                            .foregroundStyle(.white, PhotoCleanerTheme.Palette.ink)
+                                            .padding(6)
+                                    }
+                                }
+
+                                Text(id)
+                                    .font(.caption2)
+                                    .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+                                    .lineLimit(1)
+
                                 Button("Restore") { Task { try? await model.restore(id: id) } }
+                                    .font(.caption)
                             }
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                            .padding(10)
+                            .background(PhotoCleanerTheme.Palette.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: PhotoCleanerTheme.rowCornerRadius))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: PhotoCleanerTheme.rowCornerRadius)
+                                    .stroke(PhotoCleanerTheme.Palette.line, lineWidth: 1)
+                            }
                             .accessibilityElement(children: .combine)
                             .accessibilityValue(model.selectedIDs.contains(id) ? "Selected" : "Not selected")
                         }
@@ -38,6 +68,7 @@ struct DeletionReviewView: View {
                 }
             }
         }
+        .background(PhotoCleanerTheme.Palette.background)
         .navigationTitle("Pending Deletion")
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
@@ -45,8 +76,10 @@ struct DeletionReviewView: View {
                 Button("Deselect All") { model.deselectAll() }
                 Spacer()
                 Button("Cancel") { model.cancel(); dismiss() }
+                    .tint(PhotoCleanerTheme.Palette.inkSoft)
                 Button("Confirm (Mock)") { model.confirmMockDeletion() }
                     .disabled(model.selectedIDs.isEmpty)
+                    .tint(PhotoCleanerTheme.Palette.delete)
             }
         }
         .alert("Safe Mock", isPresented: Binding(

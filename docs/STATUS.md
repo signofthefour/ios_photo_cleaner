@@ -28,6 +28,14 @@ Last updated: 2026-09-01 (Asia/Seoul)
   same guarded session save, remain onscreen after failure, and offer retry.
 - Installed Xcode 26.6 and the iOS 26.5 simulator runtime. The approved build
   and test destination is `PhotoCleaner iPhone 13 mini`.
+- Applied a warm, printed-photo visual design across Home, Source Picker,
+  Cleaner, and Deletion Review: a shared `PhotoCleanerTheme.Palette` (warm
+  background/surface/ink tones plus keep/delete accents), a reusable
+  `CleanerCircularButtonStyle` for Undo/Delete/Keep/Album controls, a Cleaner
+  progress bar backed by a new `CleanerViewModel.progressFraction`, and
+  restyled rows/tiles/grid tiles on the other three screens. No view-model
+  public API, session/decision logic, gesture math, or accessibility
+  labels/hints/actions changed; only presentation.
 
 ## Remaining foundation checks
 
@@ -71,11 +79,17 @@ xcodebuild -project PhotoCleaner.xcodeproj -scheme PhotoCleaner -destination 'pl
 ## Latest verification
 
 Verified on 2026-09-01 using Xcode 26.6 and the `PhotoCleaner iPhone 13 mini`
-simulator:
+simulator, after the visual design pass above:
 
 - The specified build command exited 0 with `** BUILD SUCCEEDED **`.
-- The specified unit-test command exited 0 with `** TEST SUCCEEDED **`; 41 tests
-  passed with zero failures.
-- `xcodebuild -project PhotoCleaner.xcodeproj -list` exited 0 and listed only
-  the `PhotoCleaner` and `PhotoCleanerTests` targets. No UI-test target exists,
-  so automated UI tests were not run.
+- The specified unit-test command exited 0 with `** TEST SUCCEEDED **`; 43
+  tests passed with zero failures (41 prior plus 2 new `progressFraction`
+  tests).
+- `rg` confirmed no `PhotoKit`/`SwiftData` imports and no `deleteAssets` calls
+  outside `Services`.
+- Installed the built app on `PhotoCleaner iPhone 13 mini` and screenshotted
+  Home, confirming the new layout renders correctly on-device. Source Picker,
+  Cleaner, and Deletion Review were verified by build/test success and code
+  review only; manually walking every screen on-device remains a remaining
+  check below.
+- No UI-test target exists, so automated UI tests were not run.

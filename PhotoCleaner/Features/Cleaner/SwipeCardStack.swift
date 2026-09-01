@@ -34,19 +34,25 @@ struct SwipeCardStack: View {
             .aspectRatio(0.82, contentMode: .fit)
             .frame(maxWidth: 330)
 
-            HStack(spacing: PhotoCleanerTheme.spacing) {
-                Button("Queue for Deletion", systemImage: "trash") {
+            HStack(spacing: PhotoCleanerTheme.spacing * 1.5) {
+                Button("Queue for Deletion", systemImage: "xmark") {
                     beginCommit(.delete, cardWidth: 330)
                 }
+                .buttonStyle(CleanerCircularButtonStyle(
+                    tint: PhotoCleanerTheme.Palette.delete,
+                    diameter: PhotoCleanerTheme.primaryActionButtonDiameter
+                ))
                 .accessibilityHint(
                     "Adds this photo to the pending deletion queue without deleting it"
                 )
 
-                Spacer(minLength: 0)
-
                 Button("Keep", systemImage: "checkmark") {
                     beginCommit(.keep, cardWidth: 330)
                 }
+                .buttonStyle(CleanerCircularButtonStyle(
+                    tint: PhotoCleanerTheme.Palette.keep,
+                    diameter: PhotoCleanerTheme.primaryActionButtonDiameter
+                ))
                 .accessibilityHint("Keeps this photo and advances to the next")
             }
             .disabled(commitGate.isCommitting || cards.isEmpty)

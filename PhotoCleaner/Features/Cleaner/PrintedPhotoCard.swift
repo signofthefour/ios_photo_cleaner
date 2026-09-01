@@ -82,7 +82,7 @@ struct PrintedPhotoCard: View {
 
         VStack(spacing: PhotoCleanerTheme.photoFrameInset) {
             ZStack(alignment: .bottom) {
-                Color.secondary.opacity(0.12)
+                PhotoCleanerTheme.Palette.background
 
                 previewImage(for: presentation.content)
                     .padding(PhotoCleanerTheme.photoFrameInset)
@@ -98,6 +98,7 @@ struct PrintedPhotoCard: View {
                 }
             }
             .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: PhotoCleanerTheme.cardCornerRadius - PhotoCleanerTheme.photoFrameInset))
 
             HStack(alignment: .top, spacing: PhotoCleanerTheme.photoFrameInset) {
                 Text(metadata.dateText)
@@ -106,16 +107,17 @@ struct PrintedPhotoCard: View {
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .font(.footnote)
-            .foregroundStyle(.black)
+            .font(.system(.footnote, design: .serif).italic())
+            .foregroundStyle(PhotoCleanerTheme.Palette.ink)
             .lineLimit(nil)
             .minimumScaleFactor(0.8)
         }
         .padding(.top, PhotoCleanerTheme.photoFrameInset)
         .padding(.horizontal, PhotoCleanerTheme.photoFrameInset)
         .padding(.bottom, PhotoCleanerTheme.photoFrameBottomInset)
-        .background(.white)
+        .background(PhotoCleanerTheme.Palette.surface)
         .clipShape(RoundedRectangle(cornerRadius: PhotoCleanerTheme.cardCornerRadius))
+        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 10)
         .overlay {
             stampOverlay
         }
@@ -163,8 +165,9 @@ struct PrintedPhotoCard: View {
                     .foregroundStyle(stampColor(for: presentation.direction))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
+                    .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: 8))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: 8)
                             .stroke(
                                 stampColor(for: presentation.direction),
                                 lineWidth: PhotoCleanerTheme.stampLineWidth
@@ -184,6 +187,6 @@ struct PrintedPhotoCard: View {
     }
 
     private func stampColor(for direction: SwipeCommitDirection) -> Color {
-        direction == .keep ? .green : .red
+        direction == .keep ? PhotoCleanerTheme.Palette.keep : PhotoCleanerTheme.Palette.delete
     }
 }

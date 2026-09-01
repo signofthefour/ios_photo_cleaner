@@ -97,6 +97,13 @@ final class CleanerViewModel {
         return "\(min(session.currentPosition + 1, count)) of \(count)"
     }
 
+    /// Fraction of the session already decided, for a visual progress bar.
+    var progressFraction: Double {
+        let count = session.orderedAssetIDs.count
+        guard count > 0 else { return 0 }
+        return Double(min(session.currentPosition, count)) / Double(count)
+    }
+
     func load() async {
         previewsByAssetID.removeAll()
         retainedPreviewStatusText = nil

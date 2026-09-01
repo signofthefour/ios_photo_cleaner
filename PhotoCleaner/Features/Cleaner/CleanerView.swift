@@ -16,21 +16,34 @@ struct CleanerView: View {
             } else if let message = model.errorMessage {
                 ContentUnavailableView("Could Not Load Photo", systemImage: "exclamationmark.triangle", description: Text(message))
             } else if let asset = model.currentAsset {
-                Text(model.progressText).font(.headline)
+                VStack(spacing: 6) {
+                    Text(model.progressText)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+                    ProgressView(value: model.progressFraction)
+                        .tint(PhotoCleanerTheme.Palette.ink)
+                        .frame(maxWidth: 260)
+                }
                 SwipeCardStack(
                     cards: model.visibleCards,
                     keepAction: { await model.keepCurrent() },
                     queueAction: { await model.queueCurrentForDeletion() }
                 )
                 Label(asset.isFavorite ? "Favorite" : "Not Favorite", systemImage: asset.isFavorite ? "heart.fill" : "heart")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(
+                        asset.isFavorite ? PhotoCleanerTheme.Palette.delete : PhotoCleanerTheme.Palette.inkSoft
+                    )
             } else {
                 ContentUnavailableView("Review Complete", systemImage: "checkmark.circle", description: Text("Review pending deletions before confirming anything."))
             }
 
-            HStack {
+            HStack(spacing: PhotoCleanerTheme.spacing) {
                 Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
+                    .buttonStyle(CleanerCircularButtonStyle(tint: PhotoCleanerTheme.Palette.inkSoft, isBordered: false))
                     .disabled(model.session.currentPosition == 0)
                 Button("Album Unavailable", systemImage: "rectangle.stack.badge.plus") {}
+                    .buttonStyle(CleanerCircularButtonStyle(tint: PhotoCleanerTheme.Palette.inkSoft, isBordered: false))
                     .disabled(true)
                 Spacer()
                 Button(action: saveAndDismiss) {
@@ -42,9 +55,12 @@ struct CleanerView: View {
                     }
                 }
                 .disabled(model.isSaving)
+                .tint(PhotoCleanerTheme.Palette.ink)
             }
         }
         .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PhotoCleanerTheme.Palette.background)
         .navigationTitle("Cleaner")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)

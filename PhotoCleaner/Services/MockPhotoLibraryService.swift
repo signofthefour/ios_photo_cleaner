@@ -21,6 +21,7 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
     private var assetsBySource: [CleaningSource: [PhotoAsset]]
     private var previewsByAssetID: [String: LocalPhotoPreview]
     private var previewDelayNanosecondsByAssetID: [String: UInt64] = [:]
+    private var assetIDsByAlbumID: [String: Set<String>] = [:]
     private var forcedError: MockPhotoLibraryError?
     private let changeBroadcaster = PhotoLibraryChangeBroadcaster()
 
@@ -122,6 +123,13 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         self.albums = albums
     }
 
+    /// Seeds initial album membership for a test, distinct from
+    /// `addAsset`'s recorded `albumAssignments` audit log so seeding
+    /// doesn't look like something the test itself triggered.
+    func setAlbumMembership(_ assetIDs: Set<String>, for albumID: String) {
+        assetIDsByAlbumID[albumID] = assetIDs
+    }
+
     /// Simulates a library change (an asset added/removed/edited elsewhere)
     /// for tests: emits on `libraryChanges` without altering any fetch
     /// result itself — pair with `setAssets`/`setAlbums` to change what a
@@ -168,6 +176,12 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
     func addAsset(_ assetID: String, toAlbum albumID: String) async throws {
         try throwIfForced()
         albumAssignments.append(.init(assetID: assetID, albumID: albumID))
+        assetIDsByAlbumID[albumID, default: []].insert(assetID)
+    }
+
+    func albumIDs(containingAssetID assetID: String) async throws -> Set<String> {
+        try throwIfForced()
+        return Set(assetIDsByAlbumID.filter { $0.value.contains(assetID) }.keys)
     }
 
     func createAlbum(named name: String) async throws -> PhotoAlbum {

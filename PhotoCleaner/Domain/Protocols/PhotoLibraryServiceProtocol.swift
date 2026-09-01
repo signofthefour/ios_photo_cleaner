@@ -8,6 +8,9 @@ protocol PhotoLibraryServiceProtocol: Sendable {
     func requestAuthorization() async -> PhotoAccessStatus
     func fetchTimelineGroups() async throws -> [TimelineGroup]
     func fetchAlbums() async throws -> [PhotoAlbum]
+    /// The subset of the caller's own albums that already contain this
+    /// asset, for the album picker's existing-membership checkmarks.
+    func albumIDs(containingAssetID assetID: String) async throws -> Set<String>
     func fetchAssets(for source: CleaningSource) async throws -> [PhotoAsset]
     func fetchLocalPreview(for request: PhotoPreviewRequest) async throws -> LocalPhotoPreview?
     func setFavorite(_ favorite: Bool, assetID: String) async throws

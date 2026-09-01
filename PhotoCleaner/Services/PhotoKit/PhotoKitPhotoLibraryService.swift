@@ -3,20 +3,15 @@ import UIKit
 
 enum PhotoKitServiceError: Error, Equatable, Sendable {
     case albumNotFound
+    case assetNotFound
     case imageLoadFailed
     case deletionFailed
-    /// A mutation that belongs to a later milestone. Thrown rather than
-    /// silently no-op'd or performed for real, since none of these are wired
-    /// to any UI action in this milestone.
-    case notImplemented(String)
+    case favoriteUpdateFailed
+    case albumAssignmentFailed
+    case albumCreationFailed
 }
 
 /// `PhotoLibraryServiceProtocol` backed by the real PhotoKit library.
-///
-/// Scope for this milestone: authorization and read-only browsing
-/// (timeline groups, albums, assets, local previews). Favorite/album
-/// mutation and deletion are later milestones and intentionally throw
-/// `.notImplemented` here rather than perform a real library mutation.
 ///
 /// Preview requests always set `isNetworkAccessAllowed = false`: a
 /// cloud-optimized asset is never downloaded to satisfy a swipe decision,
@@ -113,15 +108,84 @@ final class PhotoKitPhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, 
     }
 
     func setFavorite(_ favorite: Bool, assetID: String) async throws {
-        throw PhotoKitServiceError.notImplemented("Favorite mutation ships in Milestone 4")
+        try Task.checkCancellation()
+        guard let asset = fetchAsset(byLocalIdentifier: assetID) else {
+            throw PhotoKitServiceError.assetNotFound
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest(for: asset).isFavorite = favorite
+            } completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: error ?? PhotoKitServiceError.favoriteUpdateFailed)
+                }
+            }
+        }
     }
 
     func addAsset(_ assetID: String, toAlbum albumID: String) async throws {
-        throw PhotoKitServiceError.notImplemented("Album assignment ships in Milestone 4")
+        try Task.checkCancellation()
+        guard let asset = fetchAsset(byLocalIdentifier: assetID) else {
+            throw PhotoKitServiceError.assetNotFound
+        }
+        let collections = PHAssetCollection.fetchAssetCollections(
+            withLocalIdentifiers: [albumID],
+            options: nil
+        )
+        guard let collection = collections.firstObject else {
+            throw PhotoKitServiceError.albumNotFound
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                guard let request = PHAssetCollectionChangeRequest(for: collection) else { return }
+                request.addAssets([asset] as NSArray)
+            } completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: error ?? PhotoKitServiceError.albumAssignmentFailed)
+                }
+            }
+        }
     }
 
     func createAlbum(named name: String) async throws -> PhotoAlbum {
-        throw PhotoKitServiceError.notImplemented("Album creation ships in Milestone 4")
+        try Task.checkCancellation()
+        var placeholder: PHObjectPlaceholder?
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: name)
+                placeholder = request.placeholderForCreatedAssetCollection
+            } completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: error ?? PhotoKitServiceError.albumCreationFailed)
+                }
+            }
+        }
+        guard let identifier = placeholder?.localIdentifier else {
+            throw PhotoKitServiceError.albumCreationFailed
+        }
+        return PhotoAlbum(id: identifier, title: name, photoCount: 0)
+    }
+
+    /// Uses `PHAssetCollection.fetchAssetCollectionsContaining(_:with:options:)`
+    /// — one PhotoKit call for exactly this question — filtered to
+    /// `.albumRegular` to match `fetchAlbums()`'s own filtering.
+    func albumIDs(containingAssetID assetID: String) async throws -> Set<String> {
+        try Task.checkCancellation()
+        guard let asset = fetchAsset(byLocalIdentifier: assetID) else { return [] }
+        let collections = PHAssetCollection.fetchAssetCollectionsContaining(asset, with: .album, options: nil)
+        var ids: Set<String> = []
+        collections.enumerateObjects { collection, _, _ in
+            guard collection.assetCollectionSubtype == .albumRegular else { return }
+            ids.insert(collection.localIdentifier)
+        }
+        return ids
     }
 
     /// Permanently deletes the given assets. iOS itself presents a native

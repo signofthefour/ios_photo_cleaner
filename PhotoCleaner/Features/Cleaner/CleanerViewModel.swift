@@ -123,11 +123,17 @@ final class CleanerViewModel {
                 // resumed — its source starts over fresh. Any photos it
                 // already queued for deletion are not resumable state, so
                 // they carry forward rather than silently disappearing
-                // before Deletion Review ever shows them.
+                // before Deletion Review ever shows them. Their `.pendingDelete`
+                // decision carries forward too, since restore/delete rely on
+                // `decisions[id] == .pendingDelete` matching `pendingDeletionIDs`.
                 let now = Date()
+                let carriedPendingDeletionIDs = saved?.pendingDeletionIDs ?? []
+                let carriedDecisions = Dictionary(
+                    uniqueKeysWithValues: carriedPendingDeletionIDs.map { ($0, PhotoDecision.pendingDelete) }
+                )
                 session = CleaningSession(
                     id: UUID(), source: source, orderedAssetIDs: fetchedAssets.map(\.id),
-                    currentPosition: 0, decisions: [:], pendingDeletionIDs: saved?.pendingDeletionIDs ?? [],
+                    currentPosition: 0, decisions: carriedDecisions, pendingDeletionIDs: carriedPendingDeletionIDs,
                     unavailableAssetIDs: [], createdAt: now, updatedAt: now
                 )
             }

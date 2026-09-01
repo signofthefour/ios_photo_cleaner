@@ -123,6 +123,21 @@ Last updated: 2026-09-01 (Asia/Seoul)
   so restoring can never act on the wrong set depending on what's checked
   for deletion.
 
+- Fixed a real bug surfaced by manual on-device testing: restoring a
+  single photo from Pending Deletion silently did nothing whenever that
+  photo's pending-deletion status had been carried forward from a
+  previous, completed session for the same source. `CleanerViewModel
+  .load()` carried `pendingDeletionIDs` forward into the fresh session but
+  not the matching `.pendingDelete` entries in `decisions`, so
+  `restorePendingDeletion(id:)`'s `decisions[id] == .pendingDelete` guard
+  silently no-op'd. Fixed by seeding `decisions` alongside the carried-
+  forward ids; added `CleanerViewModelTests
+  .testCarriedForwardPendingDeletionCanStillBeRestored()`, which
+  reproduces the exact scenario end-to-end (carry-forward, then restore
+  through `DeletionReviewViewModel`) and would have caught this before
+  it shipped. Audited every other `CleaningSession` construction and
+  mutating method afterward — no other invariant mismatch found.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -286,3 +301,14 @@ and saves regardless of the current `selectedIDs`). `rg` confirmed
 `deleteAssets` is still called from exactly one place. Not yet verified
 on-device: the "Restore All" button against a real queued session and
 VoiceOver/Dynamic Type on the new toolbar button.
+
+Verified again after the carried-forward-restore bugfix, this time
+actually on-device: this bug was found from real interactive testing on
+the `PhotoCleaner iPhone 13 mini` simulator (tapping Restore visibly did
+nothing), traced to root cause by inspecting the actual persisted
+SwiftData store's payload, fixed, then confirmed by re-running the same
+manual repro on the simulator with a rebuilt app after patching the
+already-corrupted on-disk session to match. Build and unit-test commands
+both exited 0; 79 tests passed with zero failures (78 prior plus 1 new
+`CleanerViewModelTests` case). Still not yet verified on-device: haptics,
+VoiceOver, Dynamic Type, and a full force-quit/relaunch resume check.

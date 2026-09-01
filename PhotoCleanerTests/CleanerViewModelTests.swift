@@ -197,6 +197,36 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertEqual(second.session.currentPosition, 0)
         XCTAssertEqual(second.session.orderedAssetIDs, ["asset-1", "asset-2", "asset-3"])
         XCTAssertEqual(second.session.pendingDeletionIDs, ["asset-1"])
+        XCTAssertEqual(second.session.decisions["asset-1"], .pendingDelete)
+    }
+
+    /// Regression test: a carried-forward pending-deletion id must also carry
+    /// forward its `.pendingDelete` decision, or `restorePendingDeletion(id:)`'s
+    /// `decisions[id] == .pendingDelete` guard silently no-ops and Deletion
+    /// Review's Restore button appears to do nothing.
+    func testCarriedForwardPendingDeletionCanStillBeRestored() async throws {
+        let library = MockPhotoLibraryService.sample
+        let repository = InMemorySessionRepository()
+        let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 3))
+
+        let first = CleanerViewModel(source: source, library: library, sessions: repository)
+        await first.load()
+        await first.queueCurrentForDeletion()
+        await first.keepCurrent()
+        await first.keepCurrent()
+        _ = await first.saveForExit()
+
+        let second = CleanerViewModel(source: source, library: library, sessions: repository)
+        await second.load()
+        XCTAssertEqual(second.session.pendingDeletionIDs, ["asset-1"])
+
+        let review = DeletionReviewViewModel(library: library, sessions: repository)
+        await review.load()
+        try await review.restore(id: "asset-1")
+
+        XCTAssertTrue(review.pendingIDs.isEmpty)
+        let saved = try await repository.loadCurrent()
+        XCTAssertEqual(saved?.pendingDeletionIDs, [])
     }
 
     func testPendingDeletionCarriesForwardWhenSwitchingToADifferentSource() async throws {
@@ -228,6 +258,7 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertEqual(second.session.currentPosition, 0)
         XCTAssertEqual(second.session.orderedAssetIDs, ["b1"])
         XCTAssertEqual(second.session.pendingDeletionIDs, ["a1"])
+        XCTAssertEqual(second.session.decisions["a1"], .pendingDelete)
     }
 
     func testSaveCanBeLoadedByNewViewModel() async throws {

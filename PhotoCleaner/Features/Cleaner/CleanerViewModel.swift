@@ -1,13 +1,41 @@
 import Foundation
 import Observation
 
+struct CleanerCardItem: Identifiable, Equatable, Sendable {
+    let asset: PhotoAsset
+    let preview: LocalPhotoPreview?
+    let previewStatusText: String?
+
+    var id: String { asset.id }
+}
+
+private enum CachedPreview: Equatable, Sendable {
+    case loading
+    case available(LocalPhotoPreview)
+    case unavailable
+}
+
+private enum PreviewLoadResult: Sendable {
+    case completed(assetID: String, preview: LocalPhotoPreview?)
+    case failed(assetID: String)
+    case cancelled(assetID: String)
+
+    var assetID: String {
+        switch self {
+        case let .completed(assetID, _), let .failed(assetID), let .cancelled(assetID):
+            assetID
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class CleanerViewModel {
     private let source: CleaningSource
     private let library: any PhotoLibraryServiceProtocol
     private let sessions: any SessionRepositoryProtocol
-    private var previewGeneration = 0
+    private var previewsByAssetID: [String: CachedPreview] = [:]
+    private var retainedPreviewStatusText: String?
 
     private(set) var session: CleaningSession
     private(set) var assets: [PhotoAsset] = []
@@ -15,8 +43,6 @@ final class CleanerViewModel {
     private(set) var isSaving = false
     private(set) var errorMessage: String?
     private(set) var saveErrorMessage: String?
-    private(set) var currentPreview: LocalPhotoPreview?
-    private(set) var previewStatusText: String?
 
     init(
         source: CleaningSource,
@@ -40,6 +66,31 @@ final class CleanerViewModel {
         return assets.first { $0.id == id }
     }
 
+    var currentPreview: LocalPhotoPreview? {
+        guard let assetID = currentAsset?.id else { return nil }
+        return preview(for: assetID)
+    }
+
+    var previewStatusText: String? {
+        guard let assetID = currentAsset?.id else { return retainedPreviewStatusText }
+        return previewStatus(for: assetID)
+    }
+
+    var visibleCards: [CleanerCardItem] {
+        let availableByID = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
+        return session.orderedAssetIDs
+            .dropFirst(session.currentPosition)
+            .prefix(3)
+            .compactMap { id in
+                guard let asset = availableByID[id] else { return nil }
+                return CleanerCardItem(
+                    asset: asset,
+                    preview: preview(for: id),
+                    previewStatusText: previewStatus(for: id)
+                )
+            }
+    }
+
     var progressText: String {
         let count = session.orderedAssetIDs.count
         guard count > 0 else { return "0 of 0" }
@@ -47,7 +98,8 @@ final class CleanerViewModel {
     }
 
     func load() async {
-        invalidatePreview()
+        previewsByAssetID.removeAll()
+        retainedPreviewStatusText = nil
         isLoading = true
         errorMessage = nil
         do {
@@ -79,11 +131,8 @@ final class CleanerViewModel {
     }
 
     func undo() {
-        let previousAssetID = currentAsset?.id
         _ = session.undoLastDecision()
-        if currentAsset?.id != previousAssetID {
-            invalidatePreview()
-        }
+        retainedPreviewStatusText = nil
     }
 
     func saveForExit() async -> Bool {
@@ -107,52 +156,94 @@ final class CleanerViewModel {
     }
 
     func loadCurrentPreview(pixelWidth: Int, pixelHeight: Int) async {
-        previewGeneration += 1
-        let generation = previewGeneration
-        guard let assetID = currentAsset?.id else {
-            currentPreview = nil
-            return
-        }
+        guard let assetID = currentAsset?.id else { return }
+        await loadPreviews(
+            assetIDs: [assetID],
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight
+        )
+    }
 
-        do {
-            let request = PhotoPreviewRequest(
-                assetID: assetID,
-                pixelWidth: pixelWidth,
-                pixelHeight: pixelHeight
-            )
-            let preview = try await library.fetchLocalPreview(for: request)
-            guard generation == previewGeneration, currentAsset?.id == assetID else { return }
-            currentPreview = preview
-            previewStatusText = preview == nil ? "Local preview unavailable" : nil
-        } catch is CancellationError {
-            return
-        } catch {
-            guard generation == previewGeneration, currentAsset?.id == assetID else { return }
-            currentPreview = nil
-            previewStatusText = "Local preview unavailable"
-        }
+    func loadVisiblePreviews(pixelWidth: Int, pixelHeight: Int) async {
+        await loadPreviews(
+            assetIDs: visibleCards.map(\.id),
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight
+        )
     }
 
     private func decideCurrent(_ decision: PhotoDecision) {
         guard let currentAsset else { return }
         let previousAssetID = currentAsset.id
+        let previousPreviewStatusText = previewStatus(for: previousAssetID)
         do {
             try session.decide(decision, assetID: currentAsset.id)
             skipUnavailableCurrentAssets()
             if self.currentAsset?.id != previousAssetID {
-                invalidatePreview(clearStatus: self.currentAsset != nil)
+                retainedPreviewStatusText = self.currentAsset == nil
+                    ? previousPreviewStatusText
+                    : nil
             }
         } catch {
             errorMessage = "That photo could not be updated. Please try again."
         }
     }
 
-    private func invalidatePreview(clearStatus: Bool = true) {
-        previewGeneration += 1
-        currentPreview = nil
-        if clearStatus {
-            previewStatusText = nil
+    private func loadPreviews(
+        assetIDs: [String],
+        pixelWidth: Int,
+        pixelHeight: Int
+    ) async {
+        let idsToLoad = assetIDs.filter { previewsByAssetID[$0] == nil }
+        guard !idsToLoad.isEmpty else { return }
+
+        for assetID in idsToLoad {
+            previewsByAssetID[assetID] = .loading
         }
+
+        let library = self.library
+        await withTaskGroup(of: PreviewLoadResult.self) { group in
+            for assetID in idsToLoad {
+                group.addTask {
+                    do {
+                        let request = PhotoPreviewRequest(
+                            assetID: assetID,
+                            pixelWidth: pixelWidth,
+                            pixelHeight: pixelHeight
+                        )
+                        let preview = try await library.fetchLocalPreview(for: request)
+                        return .completed(assetID: assetID, preview: preview)
+                    } catch is CancellationError {
+                        return .cancelled(assetID: assetID)
+                    } catch {
+                        return .failed(assetID: assetID)
+                    }
+                }
+            }
+
+            for await result in group {
+                guard previewsByAssetID[result.assetID] == .loading else { continue }
+                switch result {
+                case let .completed(_, preview):
+                    previewsByAssetID[result.assetID] = preview.map(CachedPreview.available)
+                        ?? .unavailable
+                case .failed:
+                    previewsByAssetID[result.assetID] = .unavailable
+                case .cancelled:
+                    previewsByAssetID[result.assetID] = nil
+                }
+            }
+        }
+    }
+
+    private func preview(for assetID: String) -> LocalPhotoPreview? {
+        guard case let .available(preview) = previewsByAssetID[assetID] else { return nil }
+        return preview
+    }
+
+    private func previewStatus(for assetID: String) -> String? {
+        guard previewsByAssetID[assetID] == .unavailable else { return nil }
+        return "Local preview unavailable"
     }
 
     private func skipUnavailableCurrentAssets() {

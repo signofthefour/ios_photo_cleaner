@@ -4,6 +4,79 @@ import XCTest
 
 @MainActor
 final class CleanerViewModelTests: XCTestCase {
+    func testVisibleCardsContainCurrentAndAtMostTwoSuccessorsInOrder() async {
+        let library = MockPhotoLibraryService.sample
+        let model = CleanerViewModel(
+            source: .album(.init(id: "album", title: "Mock Album", photoCount: 3)),
+            library: library,
+            sessions: InMemorySessionRepository()
+        )
+
+        await model.load()
+        XCTAssertEqual(model.visibleCards.map(\.id), ["asset-1", "asset-2", "asset-3"])
+
+        await model.keepCurrent()
+        XCTAssertEqual(model.visibleCards.map(\.id), ["asset-2", "asset-3"])
+    }
+
+    func testLoadVisiblePreviewsRequestsAllThreeCardsAndAcceptsDegradedResult() async {
+        let library = MockPhotoLibraryService.sample
+        await library.setPreview(
+            .init(content: .systemSymbol("first-quality"), isDegraded: true),
+            for: "asset-1"
+        )
+        let model = CleanerViewModel(
+            source: .album(.init(id: "album", title: "Mock Album", photoCount: 3)),
+            library: library,
+            sessions: InMemorySessionRepository()
+        )
+
+        await model.load()
+        await model.loadVisiblePreviews(pixelWidth: 900, pixelHeight: 900)
+        let previewRequests = await library.previewRequests
+
+        XCTAssertEqual(
+            Set(previewRequests.map(\.assetID)),
+            Set(["asset-1", "asset-2", "asset-3"])
+        )
+        XCTAssertEqual(
+            model.visibleCards.first?.preview?.content,
+            .systemSymbol("first-quality")
+        )
+        XCTAssertEqual(model.visibleCards.first?.preview?.isDegraded, true)
+    }
+
+    func testFirstCompletedPreviewIsFrozenForAsset() async {
+        let library = MockPhotoLibraryService.sample
+        await library.setPreview(
+            .init(content: .systemSymbol("first-quality"), isDegraded: true),
+            for: "asset-1"
+        )
+        let model = CleanerViewModel(
+            source: .album(.init(id: "album", title: "Mock Album", photoCount: 3)),
+            library: library,
+            sessions: InMemorySessionRepository()
+        )
+
+        await model.load()
+        await model.loadVisiblePreviews(pixelWidth: 900, pixelHeight: 900)
+        await library.setPreview(
+            .init(content: .systemSymbol("later-quality"), isDegraded: false),
+            for: "asset-1"
+        )
+        await model.loadVisiblePreviews(pixelWidth: 1200, pixelHeight: 1200)
+        let previewRequests = await library.previewRequests
+
+        XCTAssertEqual(
+            model.visibleCards.first?.preview?.content,
+            .systemSymbol("first-quality")
+        )
+        XCTAssertEqual(
+            previewRequests.filter { $0.assetID == "asset-1" }.count,
+            1
+        )
+    }
+
     func testQueueAndUndoNeverCallDelete() async throws {
         let library = MockPhotoLibraryService.sample
         let repository = InMemorySessionRepository()

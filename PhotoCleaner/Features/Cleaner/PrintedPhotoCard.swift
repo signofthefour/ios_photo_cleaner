@@ -1,5 +1,18 @@
 import SwiftUI
 
+struct PrintedPhotoCardStampPresentation: Equatable, Sendable {
+    let text: String
+    let direction: SwipeCommitDirection
+    let opacity: Double
+
+    init?(stamp: SwipeStamp?) {
+        guard let stamp else { return nil }
+        text = stamp.direction == .keep ? "KEEP" : "DELETE"
+        direction = stamp.direction
+        opacity = stamp.opacity
+    }
+}
+
 struct PrintedPhotoCardPreviewPresentation {
     enum Content {
         case systemSymbol(String)
@@ -56,6 +69,8 @@ struct PrintedPhotoCard: View {
     let isFavorite: Bool
     let keepAction: () -> Void
     let queueAction: () -> Void
+    var stamp: SwipeStamp?
+    var isInteractive = true
 
     var body: some View {
         let presentation = PrintedPhotoCardPreviewPresentation(
@@ -101,11 +116,15 @@ struct PrintedPhotoCard: View {
         .padding(.bottom, PhotoCleanerTheme.photoFrameBottomInset)
         .background(.white)
         .clipShape(RoundedRectangle(cornerRadius: PhotoCleanerTheme.cardCornerRadius))
+        .overlay {
+            stampOverlay
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Photo for review")
         .accessibilityValue(presentation.accessibilityValue)
         .accessibilityAction(named: "Keep Photo", keepAction)
         .accessibilityAction(named: "Queue for Deletion", queueAction)
+        .accessibilityHidden(!isInteractive)
     }
 
     @ViewBuilder
@@ -129,5 +148,42 @@ struct PrintedPhotoCard: View {
             .resizable()
             .scaledToFit()
             .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var stampOverlay: some View {
+        if let presentation = PrintedPhotoCardStampPresentation(stamp: stamp) {
+            HStack {
+                if presentation.direction == .delete {
+                    Spacer(minLength: 0)
+                }
+
+                Text(presentation.text)
+                    .font(.title2.bold())
+                    .foregroundStyle(stampColor(for: presentation.direction))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(
+                                stampColor(for: presentation.direction),
+                                lineWidth: PhotoCleanerTheme.stampLineWidth
+                            )
+                    }
+                    .rotationEffect(.degrees(presentation.direction == .keep ? -8 : 8))
+
+                if presentation.direction == .keep {
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(PhotoCleanerTheme.spacing)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .opacity(presentation.opacity)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func stampColor(for direction: SwipeCommitDirection) -> Color {
+        direction == .keep ? .green : .red
     }
 }

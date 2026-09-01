@@ -365,6 +365,26 @@ final class CleanerViewModelTests: XCTestCase {
         )
     }
 
+    func testKeepStampPresentationIncludesTextDirectionAndOpacity() {
+        let presentation = PrintedPhotoCardStampPresentation(
+            stamp: .init(direction: .keep, opacity: 0.5)
+        )
+
+        XCTAssertEqual(presentation?.text, "KEEP")
+        XCTAssertEqual(presentation?.direction, .keep)
+        XCTAssertEqual(presentation?.opacity, 0.5)
+    }
+
+    func testDeleteStampPresentationIncludesTextDirectionAndOpacity() {
+        let presentation = PrintedPhotoCardStampPresentation(
+            stamp: .init(direction: .delete, opacity: 1)
+        )
+
+        XCTAssertEqual(presentation?.text, "DELETE")
+        XCTAssertEqual(presentation?.direction, .delete)
+        XCTAssertEqual(presentation?.opacity, 1)
+    }
+
     private func waitForPreviewRequest(
         assetID: String,
         in library: MockPhotoLibraryService

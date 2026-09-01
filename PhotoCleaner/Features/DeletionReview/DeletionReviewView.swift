@@ -72,17 +72,24 @@ struct DeletionReviewView: View {
         .background(PhotoCleanerTheme.Palette.background)
         .navigationTitle("Pending Deletion")
         .toolbar {
-            ToolbarItemGroup(placement: .bottomBar) {
-                Button("Select All") { model.selectAll() }
-                    .disabled(model.isDeleting)
-                Button("Deselect All") { model.deselectAll() }
-                    .disabled(model.isDeleting)
-                Button("Restore All") { Task { try? await model.restoreAll() } }
-                    .disabled(model.isDeleting)
-                Spacer()
+            ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { model.cancel(); dismiss() }
                     .tint(PhotoCleanerTheme.Palette.inkSoft)
                     .disabled(model.isDeleting)
+            }
+            ToolbarItemGroup(placement: .bottomBar) {
+                Menu {
+                    Button("Select All") { model.selectAll() }
+                        .disabled(model.isDeleting)
+                    Button("Deselect All") { model.deselectAll() }
+                        .disabled(model.isDeleting)
+                    Button("Restore All") { Task { try? await model.restoreAll() } }
+                        .disabled(model.isDeleting)
+                } label: {
+                    Label("Selection Actions", systemImage: "ellipsis.circle")
+                }
+                .disabled(model.isDeleting)
+                Spacer()
                 deleteButton
             }
         }

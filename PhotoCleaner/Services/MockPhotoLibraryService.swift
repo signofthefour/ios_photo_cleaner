@@ -21,6 +21,7 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
     private var assetsBySource: [CleaningSource: [PhotoAsset]]
     private var previewsByAssetID: [String: LocalPhotoPreview]
     private var previewDelayNanosecondsByAssetID: [String: UInt64] = [:]
+    private var simulatesCloudDownloadForAssetID: Set<String> = []
     private var assetIDsByAlbumID: [String: Set<String>] = [:]
     private var missingAssetIDs: Set<String> = []
     private var forcedError: MockPhotoLibraryError?
@@ -116,6 +117,13 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         previewDelayNanosecondsByAssetID[assetID] = delay
     }
 
+    /// Makes `fetchLocalPreview` report a single interim progress callback
+    /// for this asset, mirroring PhotoKit only calling `onProgress` when an
+    /// asset is actually being downloaded from iCloud.
+    func setSimulatesCloudDownload(for assetID: String) {
+        simulatesCloudDownloadForAssetID.insert(assetID)
+    }
+
     func setAssets(_ assets: [PhotoAsset], for source: CleaningSource) {
         assetsBySource[source] = assets
     }
@@ -165,9 +173,15 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         return assetsBySource[source] ?? []
     }
 
-    func fetchLocalPreview(for request: PhotoPreviewRequest) async throws -> LocalPhotoPreview? {
+    func fetchLocalPreview(
+        for request: PhotoPreviewRequest,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws -> LocalPhotoPreview? {
         try throwIfForced()
         previewRequests.append(request)
+        if simulatesCloudDownloadForAssetID.contains(request.assetID) {
+            onProgress?(0.5)
+        }
         let delay = previewDelayNanosecondsByAssetID[request.assetID] ?? 0
         let preview = previewsByAssetID[request.assetID]
         if delay > 0 {

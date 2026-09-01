@@ -106,7 +106,8 @@ struct CleanerView: View {
         }
         .task { await model.load() }
         .task(id: model.currentAsset?.id) {
-            await model.loadVisiblePreviews(pixelWidth: 900, pixelHeight: 900)
+            let screenPixelWidth = Int(UIScreen.main.bounds.width * UIScreen.main.scale)
+            await model.loadVisiblePreviews(pixelWidth: screenPixelWidth, pixelHeight: screenPixelWidth)
         }
         .task {
             for await _ in model.libraryChanges {

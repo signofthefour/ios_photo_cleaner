@@ -13,11 +13,14 @@ enum PhotoKitServiceError: Error, Equatable, Sendable {
 
 /// `PhotoLibraryServiceProtocol` backed by the real PhotoKit library.
 ///
-/// Preview requests always set `isNetworkAccessAllowed = false`: a
-/// cloud-optimized asset is never downloaded to satisfy a swipe decision,
-/// and only the first locally available result is used even when
-/// PhotoKit's `.opportunistic` delivery mode would later deliver a
-/// higher-quality rendition.
+/// Preview requests default to a fast, local-only rendition:
+/// `isNetworkAccessAllowed = false`, so a cloud-optimized asset is never
+/// downloaded to satisfy a swipe decision, and only the first locally
+/// available result is used even when PhotoKit's `.opportunistic` delivery
+/// mode would later deliver a higher-quality rendition. A request with
+/// `PhotoPreviewRequest.isHighQuality` set instead asks PhotoKit for its
+/// best rendition (`.highQualityFormat`, exact resize, iCloud download
+/// allowed) — reserved for the single photo currently in detail view.
 final class PhotoKitPhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, PHPhotoLibraryChangeObserver, @unchecked Sendable {
     private let imageManager: PHImageManager
     private let changeBroadcaster = PhotoLibraryChangeBroadcaster()
@@ -98,12 +101,17 @@ final class PhotoKitPhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, 
         }
     }
 
-    func fetchLocalPreview(for request: PhotoPreviewRequest) async throws -> LocalPhotoPreview? {
+    func fetchLocalPreview(
+        for request: PhotoPreviewRequest,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws -> LocalPhotoPreview? {
         guard let asset = fetchAsset(byLocalIdentifier: request.assetID) else { return nil }
         return try await loadPreview(
             for: asset,
             pixelWidth: request.pixelWidth,
-            pixelHeight: request.pixelHeight
+            pixelHeight: request.pixelHeight,
+            isHighQuality: request.isHighQuality,
+            onProgress: onProgress
         )
     }
 
@@ -268,14 +276,23 @@ final class PhotoKitPhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, 
         return assets
     }
 
+    /// Caps how many assets a "Random" session pulls in. `result.count` is
+    /// a cheap metadata query, but enumerating the whole library to build
+    /// every `PhotoAsset` (each touching `location`, `creationDate`, etc.)
+    /// is not — on a large library that scan is what made this source slow
+    /// to open. Sampling indices first and reading only those keeps this
+    /// fast regardless of library size.
+    private static let randomSourceSampleSize = 200
+
     private func fetchShuffledLibraryAssets() -> [PhotoAsset] {
         let result = PHAsset.fetchAssets(with: .image, options: nil)
-        var assets: [PhotoAsset] = []
-        assets.reserveCapacity(result.count)
-        result.enumerateObjects { asset, _, _ in
-            assets.append(Self.photoAsset(from: asset))
-        }
         var rng = SystemRandomNumberGenerator()
+        let indices = RandomPhotoOrdering.sampleIndices(
+            count: result.count,
+            sampleSize: Self.randomSourceSampleSize,
+            using: &rng
+        )
+        let assets = indices.map { Self.photoAsset(from: result.object(at: $0)) }
         return RandomPhotoOrdering.shuffled(assets, using: &rng)
     }
 
@@ -306,13 +323,20 @@ final class PhotoKitPhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, 
     private func loadPreview(
         for asset: PHAsset,
         pixelWidth: Int,
-        pixelHeight: Int
+        pixelHeight: Int,
+        isHighQuality: Bool,
+        onProgress: (@Sendable (Double) -> Void)?
     ) async throws -> LocalPhotoPreview? {
         let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = false
-        options.deliveryMode = .opportunistic
-        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = isHighQuality
+        options.deliveryMode = isHighQuality ? .highQualityFormat : .opportunistic
+        options.resizeMode = isHighQuality ? .exact : .fast
         options.isSynchronous = false
+        if let onProgress {
+            options.progressHandler = { progress, _, _, _ in
+                onProgress(progress)
+            }
+        }
 
         let box = PhotoKitImageRequestBox()
         let imageManager = self.imageManager
@@ -335,7 +359,8 @@ final class PhotoKitPhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, 
                             continuation.resume(throwing: PhotoKitServiceError.imageLoadFailed)
                             return
                         }
-                        guard let image, let data = image.jpegData(compressionQuality: 0.85) else {
+                        let compressionQuality: CGFloat = isHighQuality ? 0.92 : 0.85
+                        guard let image, let data = image.jpegData(compressionQuality: compressionQuality) else {
                             continuation.resume(returning: nil)
                             return
                         }

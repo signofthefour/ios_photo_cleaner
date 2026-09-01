@@ -49,4 +49,30 @@ final class RandomPhotoOrderingTests: XCTestCase {
         let single = makeAssets(1)
         XCTAssertEqual(RandomPhotoOrdering.shuffled(single, using: &generator), single)
     }
+
+    func testSampleIndicesReturnsDistinctInBoundsIndicesInAscendingOrder() {
+        var generator = SeededGenerator(seed: 7)
+
+        let indices = RandomPhotoOrdering.sampleIndices(count: 10_000, sampleSize: 200, using: &generator)
+
+        XCTAssertEqual(indices.count, 200)
+        XCTAssertEqual(Set(indices).count, 200)
+        XCTAssertEqual(indices, indices.sorted())
+        XCTAssertTrue(indices.allSatisfy { (0..<10_000).contains($0) })
+    }
+
+    func testSampleIndicesCapsAtCountWhenSampleSizeIsLarger() {
+        var generator = SeededGenerator(seed: 7)
+
+        let indices = RandomPhotoOrdering.sampleIndices(count: 5, sampleSize: 200, using: &generator)
+
+        XCTAssertEqual(Set(indices), Set(0..<5))
+    }
+
+    func testSampleIndicesHandlesZeroCountOrSampleSize() {
+        var generator = SeededGenerator(seed: 7)
+
+        XCTAssertEqual(RandomPhotoOrdering.sampleIndices(count: 0, sampleSize: 200, using: &generator), [])
+        XCTAssertEqual(RandomPhotoOrdering.sampleIndices(count: 10, sampleSize: 0, using: &generator), [])
+    }
 }

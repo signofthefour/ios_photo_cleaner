@@ -12,9 +12,21 @@ protocol PhotoLibraryServiceProtocol: Sendable {
     /// asset, for the album picker's existing-membership checkmarks.
     func albumIDs(containingAssetID assetID: String) async throws -> Set<String>
     func fetchAssets(for source: CleaningSource) async throws -> [PhotoAsset]
-    func fetchLocalPreview(for request: PhotoPreviewRequest) async throws -> LocalPhotoPreview?
+    /// `onProgress` fires only while the asset is actually being downloaded
+    /// from iCloud — a fully local asset never calls it. Reports fractional
+    /// progress (0...1) from an arbitrary background queue.
+    func fetchLocalPreview(
+        for request: PhotoPreviewRequest,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws -> LocalPhotoPreview?
     func setFavorite(_ favorite: Bool, assetID: String) async throws
     func addAsset(_ assetID: String, toAlbum albumID: String) async throws
     func createAlbum(named name: String) async throws -> PhotoAlbum
     func deleteAssets(ids: [String]) async throws
+}
+
+extension PhotoLibraryServiceProtocol {
+    func fetchLocalPreview(for request: PhotoPreviewRequest) async throws -> LocalPhotoPreview? {
+        try await fetchLocalPreview(for: request, onProgress: nil)
+    }
 }

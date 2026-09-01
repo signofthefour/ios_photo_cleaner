@@ -11,18 +11,18 @@ struct CleanerCardItem: Identifiable, Equatable, Sendable {
 
 private enum CachedPreview: Equatable, Sendable {
     case loading
-    case available(LocalPhotoPreview)
+    case available(LocalPhotoPreview, isHighQuality: Bool)
     case unavailable
 }
 
 private enum PreviewLoadResult: Sendable {
-    case completed(assetID: String, preview: LocalPhotoPreview?)
+    case completed(assetID: String, preview: LocalPhotoPreview?, isHighQuality: Bool)
     case failed(assetID: String)
     case cancelled(assetID: String)
 
     var assetID: String {
         switch self {
-        case let .completed(assetID, _), let .failed(assetID), let .cancelled(assetID):
+        case let .completed(assetID, _, _), let .failed(assetID), let .cancelled(assetID):
             assetID
         }
     }
@@ -36,6 +36,7 @@ final class CleanerViewModel {
     private let sessions: any SessionRepositoryProtocol
     private var previewsByAssetID: [String: CachedPreview] = [:]
     private var retainedPreviewStatusText: String?
+    private var downloadingFromiCloudAssetIDs: Set<String> = []
 
     private(set) var session: CleaningSession
     private(set) var assets: [PhotoAsset] = []
@@ -216,18 +217,30 @@ final class CleanerViewModel {
         skipUnavailableCurrentAssets()
     }
 
+    /// Loads the current asset's preview in high quality: this is the
+    /// single photo on screen in detail, unlike the card-stack prefetch
+    /// below.
     func loadCurrentPreview(pixelWidth: Int, pixelHeight: Int) async {
         guard let assetID = currentAsset?.id else { return }
         await loadPreviews(
             assetIDs: [assetID],
+            highQualityAssetIDs: [assetID],
             pixelWidth: pixelWidth,
             pixelHeight: pixelHeight
         )
     }
 
+    /// Prefetches the current card plus its upcoming successors. The
+    /// current card and the one right after it are both requested in high
+    /// quality, so the incoming card is already sharp the instant a swipe
+    /// lands on it — anything further out is a fast local-only prefetch
+    /// that upgrades once it itself becomes current or next-up.
     func loadVisiblePreviews(pixelWidth: Int, pixelHeight: Int) async {
+        let cards = visibleCards
+        let highQualityAssetIDs = Set(cards.prefix(2).map(\.id))
         await loadPreviews(
-            assetIDs: visibleCards.map(\.id),
+            assetIDs: cards.map(\.id),
+            highQualityAssetIDs: highQualityAssetIDs,
             pixelWidth: pixelWidth,
             pixelHeight: pixelHeight
         )
@@ -250,12 +263,25 @@ final class CleanerViewModel {
         }
     }
 
+    /// An asset already cached at low quality is reloaded when it's now
+    /// requested as high quality (it just became the current card); an
+    /// unavailable or already-loading asset is never retried.
     private func loadPreviews(
         assetIDs: [String],
+        highQualityAssetIDs: Set<String>,
         pixelWidth: Int,
         pixelHeight: Int
     ) async {
-        let idsToLoad = assetIDs.filter { previewsByAssetID[$0] == nil }
+        let idsToLoad = assetIDs.filter { assetID in
+            switch previewsByAssetID[assetID] {
+            case nil:
+                true
+            case let .available(_, isHighQuality):
+                highQualityAssetIDs.contains(assetID) && !isHighQuality
+            case .loading, .unavailable:
+                false
+            }
+        }
         guard !idsToLoad.isEmpty else { return }
 
         for assetID in idsToLoad {
@@ -265,15 +291,21 @@ final class CleanerViewModel {
         let library = self.library
         await withTaskGroup(of: PreviewLoadResult.self) { group in
             for assetID in idsToLoad {
-                group.addTask {
+                let isHighQuality = highQualityAssetIDs.contains(assetID)
+                group.addTask { [weak self] in
                     do {
                         let request = PhotoPreviewRequest(
                             assetID: assetID,
                             pixelWidth: pixelWidth,
-                            pixelHeight: pixelHeight
+                            pixelHeight: pixelHeight,
+                            isHighQuality: isHighQuality
                         )
-                        let preview = try await library.fetchLocalPreview(for: request)
-                        return .completed(assetID: assetID, preview: preview)
+                        let preview = try await library.fetchLocalPreview(for: request) { _ in
+                            Task { @MainActor in
+                                self?.downloadingFromiCloudAssetIDs.insert(assetID)
+                            }
+                        }
+                        return .completed(assetID: assetID, preview: preview, isHighQuality: isHighQuality)
                     } catch is CancellationError {
                         return .cancelled(assetID: assetID)
                     } catch {
@@ -283,11 +315,13 @@ final class CleanerViewModel {
             }
 
             for await result in group {
+                downloadingFromiCloudAssetIDs.remove(result.assetID)
                 guard previewsByAssetID[result.assetID] == .loading else { continue }
                 switch result {
-                case let .completed(_, preview):
-                    previewsByAssetID[result.assetID] = preview.map(CachedPreview.available)
-                        ?? .unavailable
+                case let .completed(_, preview, isHighQuality):
+                    previewsByAssetID[result.assetID] = preview.map {
+                        CachedPreview.available($0, isHighQuality: isHighQuality)
+                    } ?? .unavailable
                 case .failed:
                     previewsByAssetID[result.assetID] = .unavailable
                 case .cancelled:
@@ -298,11 +332,14 @@ final class CleanerViewModel {
     }
 
     private func preview(for assetID: String) -> LocalPhotoPreview? {
-        guard case let .available(preview) = previewsByAssetID[assetID] else { return nil }
+        guard case let .available(preview, _) = previewsByAssetID[assetID] else { return nil }
         return preview
     }
 
     private func previewStatus(for assetID: String) -> String? {
+        if downloadingFromiCloudAssetIDs.contains(assetID) {
+            return "Downloading from iCloud…"
+        }
         guard previewsByAssetID[assetID] == .unavailable else { return nil }
         return "Local preview unavailable"
     }

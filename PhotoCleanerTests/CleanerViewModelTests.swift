@@ -479,6 +479,25 @@ final class CleanerViewModelTests: XCTestCase {
         XCTAssertEqual(model.currentPreview?.content, .systemSymbol("photo.fill"))
     }
 
+    func testDownloadingFromiCloudShowsStatusTextWhileInFlightAndClearsOnCompletion() async {
+        let library = MockPhotoLibraryService.sample
+        await library.setSimulatesCloudDownload(for: "asset-1")
+        await library.setPreviewDelayNanoseconds(200_000_000, for: "asset-1")
+        let source = CleaningSource.album(.init(id: "album", title: "Mock Album", photoCount: 3))
+        let model = CleanerViewModel(source: source, library: library, sessions: InMemorySessionRepository())
+
+        await model.load()
+        let task = Task { await model.loadCurrentPreview(pixelWidth: 900, pixelHeight: 900) }
+
+        let sawDownloadingStatus = await waitForCondition { model.previewStatusText == "Downloading from iCloud…" }
+        XCTAssertTrue(sawDownloadingStatus)
+
+        await task.value
+
+        XCTAssertNil(model.previewStatusText)
+        XCTAssertEqual(model.currentPreview?.content, .systemSymbol("photo"))
+    }
+
     func testAvailableCardPresentationKeepsExistingAccessibilitySentences() {
         let metadata = PhotoCardMetadata(
             asset: .init(
@@ -593,6 +612,16 @@ final class CleanerViewModelTests: XCTestCase {
         for _ in 0..<1_000 {
             let requests = await library.previewRequests
             if requests.contains(where: { $0.assetID == assetID }) {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+
+    private func waitForCondition(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<1_000 {
+            if condition() {
                 return true
             }
             await Task.yield()

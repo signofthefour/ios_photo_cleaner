@@ -82,7 +82,7 @@ are skipped safely and recorded as a library change.
 2. Photo authorization and browsing: all access states, timeline and
    album browsing, empty/error states, and library-change observation.
 3. Swipe cleaner: accessible gestures and buttons, undo, progress,
-   prefetching, and save/resume using mock data.
+   prefetching, and durable save/resume.
 4. Favorites and albums: optimistic favorite changes, searchable album
    picker, album creation, and assignment rollback.
 5. Safe deletion: exact review set, restoration, confirmed batch request,

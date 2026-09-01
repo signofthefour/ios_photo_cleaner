@@ -103,6 +103,18 @@ Last updated: 2026-09-01 (Asia/Seoul)
   for `.denied` (`.restricted` is externally enforced, so no button).
   See `docs/superpowers/specs/2026-09-01-photo-library-design.md`.
 
+- Closed out Milestone 3 on `feature/swipe-cleaner` (branched from
+  `feature/deletion-review`): sessions are now durably persisted via
+  SwiftData instead of `InMemorySessionRepository`. `PersistedCleaningSession`
+  stores one JSON-encoded `CleaningSession` blob (no photo bytes — the same
+  fields `docs/PRODUCT.md`'s "Resume data" section already specifies); the
+  new `SwiftDataSessionRepository` (`@ModelActor`) deletes any existing row
+  before inserting on `save`, preserving the existing single-current-session
+  invariant. `AppContainer.live` now builds a real `ModelContainer` for
+  it; `AppContainer.liveMock` and every existing test are unchanged and
+  keep using `InMemorySessionRepository`. See
+  `docs/superpowers/specs/2026-09-01-swipe-cleaner-persistence-design.md`.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -133,11 +145,11 @@ status per milestone rather than "what's left, in order."
   states, and library-change observation are in place. `.limited` access
   is handled like `.authorized` throughout; no separate "select more
   photos" affordance was built for it.
-- Milestone 3 (Swipe cleaner): the interaction itself — gesture math,
-  stamps, undo, progress, and prefetching the visible three-card window —
-  was built ahead of schedule on `feature/foundation`. Not done: durable
-  session persistence. Sessions are still `InMemorySessionRepository`
-  only and do not survive an app relaunch.
+- Milestone 3 (Swipe cleaner): complete as of this session. The
+  interaction itself — gesture math, stamps, undo, progress, and
+  prefetching the visible three-card window — was built ahead of
+  schedule on `feature/foundation`; durable session persistence (SwiftData)
+  was added on `feature/swipe-cleaner` to close the gap.
 - Milestone 4 (Favorites and albums): not started.
   `setFavorite`/`addAsset`/`createAlbum` all throw `.notImplemented` and
   are unreachable from the UI.
@@ -152,7 +164,9 @@ status per milestone rather than "what's left, in order."
 
 ## Verification commands
 
-Run from `.worktrees/foundation`:
+Run from `.worktrees/swipe-cleaner` (the current tip of the
+foundation → photo-library → deletion-review → swipe-cleaner branch
+chain):
 
 ```sh
 xcodebuild -project PhotoCleaner.xcodeproj -scheme PhotoCleaner -destination 'platform=iOS Simulator,name=PhotoCleaner iPhone 13 mini' build
@@ -240,3 +254,17 @@ imports exist. Not yet verified on-device: deleting/adding a photo via the
 system Photos app while the Cleaner or Source Picker is open, and the
 denied-access "Open Settings" button actually opening the app's Settings
 page.
+
+Verified again on 2026-09-01 on `feature/swipe-cleaner`, after adding
+SwiftData session persistence: build and unit-test commands both exited 0
+(`** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`); 75 tests passed with
+zero failures (71 prior plus 4 new `SwiftDataSessionRepositoryTests`
+cases: empty load, round-trip across repository instances sharing a
+container, save-replaces-not-accumulates, and remove-clears). `rg`
+confirmed `import SwiftData` appears only under `Persistence/` and in
+`App/AppContainer.swift`, nowhere in `Domain`, `Features`, or `Services`.
+Not yet verified on-device: starting a session, force-quitting before
+closing the Cleaner, and confirming a relaunch resumes at the same
+position and pending-deletion queue — the actual behavior this change
+adds, which a unit test can only approximate by simulating a fresh
+repository instance against a shared container.

@@ -1,3 +1,5 @@
+import SwiftData
+
 @MainActor
 final class AppContainer {
     let library: any PhotoLibraryServiceProtocol
@@ -18,12 +20,21 @@ final class AppContainer {
         )
     }
 
-    /// Backed by the real photo library via PhotoKit. Session persistence
-    /// remains in-memory only; durable resume is a later milestone.
+    private static let sessionModelContainer: ModelContainer = {
+        do {
+            return try ModelContainer(for: PersistedCleaningSession.self)
+        } catch {
+            fatalError("Failed to create session ModelContainer: \(error)")
+        }
+    }()
+
+    /// Backed by the real photo library via PhotoKit, with sessions
+    /// durably persisted via SwiftData so a saved session survives an
+    /// app relaunch.
     static var live: AppContainer {
         AppContainer(
             library: PhotoKitPhotoLibraryService(),
-            sessions: InMemorySessionRepository()
+            sessions: SwiftDataSessionRepository(modelContainer: sessionModelContainer)
         )
     }
 

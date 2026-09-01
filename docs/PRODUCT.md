@@ -64,9 +64,15 @@ does not remove it from any other album.
 ## Deletion review
 
 The review grid shows every queued asset. Users can inspect full size,
-restore individual assets, select or deselect all, cancel while retaining
-the queue, or confirm the PhotoKit deletion request. Failed or cancelled
-system operations leave session records intact.
+restore individual assets, restore the entire queue at once, select or
+deselect all, cancel while retaining the queue, or confirm the PhotoKit
+deletion request. Failed or cancelled system operations leave session
+records intact.
+
+Restoring the whole queue is independent of the select/deselect-all
+checkboxes, which govern only what a subsequent deletion confirmation
+would permanently delete — the two are kept separate so restoring never
+depends on, or is confused with, what's currently checked for deletion.
 
 ## Resume data
 

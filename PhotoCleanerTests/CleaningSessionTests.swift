@@ -38,6 +38,29 @@ final class CleaningSessionTests: XCTestCase {
         XCTAssertTrue(CleaningSession.fixture(assetIDs: []).isComplete)
     }
 
+    func testRestoreAllPendingDeletionsClearsQueueAndDecisions() throws {
+        var session = CleaningSession.fixture(assetIDs: ["a", "b", "c"])
+        try session.decide(.pendingDelete, assetID: "a")
+        try session.decide(.keep, assetID: "b")
+        try session.decide(.pendingDelete, assetID: "c")
+
+        session.restoreAllPendingDeletions()
+
+        XCTAssertTrue(session.pendingDeletionIDs.isEmpty)
+        XCTAssertNil(session.decisions["a"])
+        XCTAssertNil(session.decisions["c"])
+        XCTAssertEqual(session.decisions["b"], .keep)
+    }
+
+    func testRestoreAllPendingDeletionsOnEmptyQueueDoesNothing() {
+        var session = CleaningSession.fixture(assetIDs: ["a"])
+        let before = session
+
+        session.restoreAllPendingDeletions()
+
+        XCTAssertEqual(session, before)
+    }
+
     func testMissingAssetIsRecordedAndSkipped() {
         var session = CleaningSession.fixture(assetIDs: ["a", "b"])
 

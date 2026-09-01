@@ -115,6 +115,14 @@ Last updated: 2026-09-01 (Asia/Seoul)
   keep using `InMemorySessionRepository`. See
   `docs/superpowers/specs/2026-09-01-swipe-cleaner-persistence-design.md`.
 
+- Added a "Restore All" action to Deletion Review: `CleaningSession
+  .restoreAllPendingDeletions()` clears the entire pending-deletion queue
+  and its decisions in one step, and `DeletionReviewViewModel.restoreAll()`
+  saves the result. Deliberately independent of `selectedIDs` (which only
+  governs what a subsequent `confirmDeletion()` would permanently delete)
+  so restoring can never act on the wrong set depending on what's checked
+  for deletion.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -268,3 +276,13 @@ closing the Cleaner, and confirming a relaunch resumes at the same
 position and pending-deletion queue — the actual behavior this change
 adds, which a unit test can only approximate by simulating a fresh
 repository instance against a shared container.
+
+Verified again after adding "Restore All" to Deletion Review: build and
+unit-test commands both exited 0 (`** BUILD SUCCEEDED **`,
+`** TEST SUCCEEDED **`); 78 tests passed with zero failures (75 prior plus
+2 new `CleaningSessionTests` cases for `restoreAllPendingDeletions()` and
+1 new `DeletionReviewViewModelTests` case confirming it clears the queue
+and saves regardless of the current `selectedIDs`). `rg` confirmed
+`deleteAssets` is still called from exactly one place. Not yet verified
+on-device: the "Restore All" button against a real queued session and
+VoiceOver/Dynamic Type on the new toolbar button.

@@ -15,6 +15,20 @@ final class DeletionReviewViewModelTests: XCTestCase {
         XCTAssertEqual(saved?.pendingDeletionIDs, ["b"])
     }
 
+    func testRestoreAllClearsQueueAndSavesSessionRegardlessOfSelection() async throws {
+        let repository = InMemorySessionRepository(initial: .fixturePendingDeletion(ids: ["a", "b"]))
+        let model = DeletionReviewViewModel(library: MockPhotoLibraryService.sample, sessions: repository)
+
+        await model.load()
+        model.deselectAll()
+        try await model.restoreAll()
+
+        XCTAssertTrue(model.pendingIDs.isEmpty)
+        XCTAssertTrue(model.selectedIDs.isEmpty)
+        let saved = try await repository.loadCurrent()
+        XCTAssertEqual(saved?.pendingDeletionIDs, [])
+    }
+
     func testCancelRetainsQueue() async throws {
         let repository = InMemorySessionRepository(initial: .fixturePendingDeletion(ids: ["a"]))
         let model = DeletionReviewViewModel(library: MockPhotoLibraryService.sample, sessions: repository)

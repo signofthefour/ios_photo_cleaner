@@ -94,6 +94,16 @@ struct CleaningSession: Hashable, Codable, Sendable {
         updatedAt = Date()
     }
 
+    /// Restores every currently pending-deletion asset in one step.
+    mutating func restoreAllPendingDeletions() {
+        guard !pendingDeletionIDs.isEmpty else { return }
+        for assetID in pendingDeletionIDs {
+            decisions.removeValue(forKey: assetID)
+        }
+        pendingDeletionIDs.removeAll()
+        updatedAt = Date()
+    }
+
     /// Marks assets as resolved after a successful (or already-moot) permanent
     /// deletion request: no longer pending, since the photo no longer exists
     /// in the library. Call only after the system delete has succeeded.

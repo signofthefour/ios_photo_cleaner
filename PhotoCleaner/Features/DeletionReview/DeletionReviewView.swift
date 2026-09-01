@@ -77,6 +77,8 @@ struct DeletionReviewView: View {
                     .disabled(model.isDeleting)
                 Button("Deselect All") { model.deselectAll() }
                     .disabled(model.isDeleting)
+                Button("Restore All") { Task { try? await model.restoreAll() } }
+                    .disabled(model.isDeleting)
                 Spacer()
                 Button("Cancel") { model.cancel(); dismiss() }
                     .tint(PhotoCleanerTheme.Palette.inkSoft)

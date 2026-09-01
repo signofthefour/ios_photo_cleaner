@@ -82,6 +82,19 @@ final class DeletionReviewViewModel {
         selectedIDs.remove(id)
     }
 
+    /// Restores every pending-deletion asset in the queue at once. Independent
+    /// of `selectedIDs`, which only governs what a subsequent `confirmDeletion()`
+    /// would permanently delete — reusing it here would risk restoring the
+    /// wrong set if the user had deselected items they meant to keep queued.
+    func restoreAll() async throws {
+        guard var session, !pendingIDs.isEmpty else { return }
+        session.restoreAllPendingDeletions()
+        try await sessions.save(session)
+        self.session = session
+        pendingIDs = session.pendingDeletionIDs
+        selectedIDs.removeAll()
+    }
+
     func selectAll() {
         selectedIDs = Set(pendingIDs)
     }

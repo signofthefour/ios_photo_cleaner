@@ -167,6 +167,41 @@ Last updated: 2026-09-01 (Asia/Seoul)
   confirm a disappeared id (and every id disappearing at once) still
   resolves out of the pending queue rather than surfacing as a failure.
 
+- Started Milestone 6 (production hardening) with the pieces verifiable
+  without a device or a real Apple Developer Team:
+  - Found and fixed a real dark-mode contrast bug: `PhotoCleanerTheme
+    .Palette` is a fixed, non-adaptive warm palette, but a few `Text`
+    views (Home's title and "Continue Cleaning") had no explicit
+    `.foregroundStyle`, so they used the system's adaptive label color —
+    which turns white in dark mode against the palette's fixed light
+    background, becoming nearly unreadable. Confirmed on the
+    `PhotoCleaner iPhone 13 mini` simulator with system appearance
+    forced to dark. Rather than audit every label across four screens
+    for the same omission (a systemic, easy-to-reintroduce class of
+    bug), declared the app light-only via `UIUserInterfaceStyle` in
+    `Info.plist` — the palette was always designed as one fixed warm
+    aesthetic, never with dark variants, so this makes that already-true
+    constraint explicit and unbreakable. Reconfirmed on-device: with
+    system appearance still forced to dark, the app now renders fully
+    legible in light mode regardless.
+  - Added `PrivacyInfo.xcprivacy` (`PhotoCleaner/Resources/`): declares
+    no tracking, no collected data types, and no accessed
+    "required-reason" APIs — accurate, since the app has no networking,
+    no `UserDefaults`, and no third-party SDKs (confirmed by `rg`).
+  - Added `ITSAppUsesNonExemptEncryption = false` to `Info.plist` — the
+    app does no custom encryption or networking.
+  - Verified `xcodebuild archive -destination 'generic/platform=iOS'`
+    succeeds: produces a real arm64 device binary that passes Apple's
+    store-validation bundle checks (`-validate-for-store`), with the
+    privacy manifest correctly bundled at the app root. The archive is
+    unsigned (`CODE_SIGNING_ALLOWED = NO`, no Apple Developer Team
+    configured in this environment) — exporting for TestFlight/App Store
+    distribution needs a real Team ID this session doesn't have.
+  - Not started: localization (needs a decision on which languages),
+    memory pressure and interruption handling, large/iCloud library
+    behavior, and profiling — all need a real device, a large/iCloud
+    library, or Instruments, none of which are available here.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -217,7 +252,11 @@ status per milestone rather than "what's left, in order."
   including when that leaves nothing to actually delete), seedable via
   `setMissingAssetIDs(_:)`; on-device confirmation with a real
   disappearing asset remains a manual check.
-- Milestone 6 (Production hardening): not started.
+- Milestone 6 (Production hardening): in progress. Done: privacy
+  manifest, `ITSAppUsesNonExemptEncryption`, a confirmed light-only
+  appearance fix, and a verified (unsigned) archive build. Not started:
+  localization, memory pressure/interruption handling, large/iCloud
+  library behavior, and profiling.
 
 ## Verification commands
 
@@ -372,3 +411,20 @@ zero failures (92 prior plus 2 new `DeletionReviewViewModelTests` cases).
 Not yet verified on-device: deleting a queued photo via the system
 Photos app while Deletion Review is open, then confirming, to see the
 real behavior this test models.
+
+Verified again after starting Milestone 6: build and unit-test commands
+both exited 0 (`** BUILD SUCCEEDED **`, `** TEST SUCCEEDED **`); all 94
+tests still pass (no test-relevant code changed — this pass was
+Info.plist and a bundled resource). `plutil -lint` reported `OK` for
+both `Info.plist` and the new `PrivacyInfo.xcprivacy`.
+`xcodebuild archive -destination 'generic/platform=iOS'` succeeded,
+produced an arm64 `PhotoCleaner.app` that passed `-validate-for-store`,
+and bundled `PrivacyInfo.xcprivacy` at the app root — confirmed by
+inspecting the archive directly. On-device (well, on-simulator): forced
+system appearance to dark via `xcrun simctl ui ... appearance dark` and
+screenshotted Home before the fix (confirmed the title and "Continue
+Cleaning" were nearly unreadable — white text on the fixed light
+background) and after adding `UIUserInterfaceStyle = Light` (confirmed
+fully legible with system appearance still forced to dark). Not
+verified: the archive's actual signed export/upload flow, which needs a
+real Apple Developer Team this environment doesn't have.

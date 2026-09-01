@@ -5,10 +5,12 @@
 1. On launch, inspect photo-library authorization.
 2. Explain and request access when it has not been granted. Full and
    limited access both lead to Home; denial must not create a dead end.
-3. From Home, continue a saved session, choose a timeline group, choose
-   an album, review pending deletion, or open Settings.
-4. Before cleaning, show the selected source's photo count and estimated
-   review size.
+3. From Home, continue a saved session, choose a month, choose an album,
+   start a random review of the whole library, review pending deletion, or
+   open Settings.
+4. Before cleaning a chosen month or album, show the source's photo count
+   and estimated review size. A random review has no fixed source to size
+   in advance — it draws from the whole library in shuffled order.
 5. During cleaning, swipe right to keep or left to queue for deletion.
    Visible buttons and accessibility actions provide equivalent controls.
 6. Save the session when closing the cleaner.

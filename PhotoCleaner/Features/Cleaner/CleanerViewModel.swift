@@ -60,6 +60,8 @@ final class CleanerViewModel {
         )
     }
 
+    var libraryChanges: AsyncStream<Void> { library.libraryChanges }
+
     var currentAsset: PhotoAsset? {
         guard session.orderedAssetIDs.indices.contains(session.currentPosition) else { return nil }
         let id = session.orderedAssetIDs[session.currentPosition]
@@ -112,14 +114,20 @@ final class CleanerViewModel {
         do {
             let fetchedAssets = try await library.fetchAssets(for: source)
             assets = fetchedAssets
-            if let saved = try await sessions.loadCurrent(), saved.source == source {
+            let saved = try await sessions.loadCurrent()
+            if let saved, saved.source == source, !saved.isComplete {
                 session = saved
                 skipUnavailableCurrentAssets()
             } else {
+                // A finished review (or one for a different source) is never
+                // resumed — its source starts over fresh. Any photos it
+                // already queued for deletion are not resumable state, so
+                // they carry forward rather than silently disappearing
+                // before Deletion Review ever shows them.
                 let now = Date()
                 session = CleaningSession(
                     id: UUID(), source: source, orderedAssetIDs: fetchedAssets.map(\.id),
-                    currentPosition: 0, decisions: [:], pendingDeletionIDs: [],
+                    currentPosition: 0, decisions: [:], pendingDeletionIDs: saved?.pendingDeletionIDs ?? [],
                     unavailableAssetIDs: [], createdAt: now, updatedAt: now
                 )
             }
@@ -160,6 +168,19 @@ final class CleanerViewModel {
 
     func clearSaveError() {
         saveErrorMessage = nil
+    }
+
+    /// Re-fetches this source's assets and re-applies the existing
+    /// unavailable-asset handling, so a photo deleted elsewhere (the
+    /// system Photos app, another device) is skipped rather than leaving
+    /// the session stuck on an asset that no longer exists. Best-effort:
+    /// a failed refresh is silently ignored rather than surfaced, since
+    /// this runs in the background and the current session state remains
+    /// valid either way.
+    func handleLibraryChange() async {
+        guard let refreshedAssets = try? await library.fetchAssets(for: source) else { return }
+        assets = refreshedAssets
+        skipUnavailableCurrentAssets()
     }
 
     func loadCurrentPreview(pixelWidth: Int, pixelHeight: Int) async {

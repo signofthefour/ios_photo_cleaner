@@ -4,8 +4,11 @@
 
 Add the real PhotoKit-backed implementation of `PhotoLibraryServiceProtocol`
 on `feature/photo-library`, branched from `feature/foundation`. This
-delivers PRODUCT.md's Milestone 2: real authorization, and read-only
-timeline/album browsing backed by the actual photo library.
+delivers PRODUCT.md's Milestone 2: real authorization, read-only
+timeline/album browsing, and library-change observation, backed by the
+actual photo library. (Library-change observation and the denied-access
+recovery path described below were added later, on `feature/deletion-review`,
+to actually close out Milestone 2 — see "Library-change observation".)
 
 It does not add favorite mutation, album mutation, or permanent deletion.
 Those protocol methods exist (the protocol is shared with the mock) but
@@ -73,6 +76,69 @@ contract:
   .encodedImageData`) at 0.85 quality; encoded bytes are held only in
   memory for display; the local-preview contract still persists nothing.
 
+## Library-change observation
+
+`PhotoLibraryServiceProtocol` exposes `var libraryChanges: AsyncStream<Void>`.
+Events carry no diff — every consumer just re-fetches whatever it's
+currently showing, consistent with the rest of this service treating
+PhotoKit as the source of truth rather than caching it.
+
+`PhotoLibraryChangeBroadcaster` is the shared fan-out: each call to
+`makeStream()` registers its own `AsyncStream` continuation (unbounded
+buffering, so a `notify()` before a consumer starts iterating is not lost)
+and removes itself via `onTermination` when that consumer's `Task` is
+cancelled — which happens automatically when a SwiftUI `.task` subscribing
+to it is torn down. `MockPhotoLibraryService` owns one directly, exposed as
+`nonisolated var libraryChanges`, with a `simulateLibraryChange()` test
+hook. `PhotoKitPhotoLibraryService` owns one too, but only registers itself
+as a real `PHPhotoLibraryChangeObserver` with `PHPhotoLibrary.shared()` the
+first time `libraryChanges` is accessed (never in `init`), and forwards
+`photoLibraryDidChange` straight to the broadcaster; `deinit` unregisters.
+Becoming a `PHPhotoLibraryChangeObserver` required making the service an
+`NSObject` subclass, since that protocol demands `NSObjectProtocol`.
+
+Two consumers, both wired as a plain `for await _ in ... { }` inside a
+SwiftUI `.task` (auto-cancelled when the screen disappears, which is what
+tears down the subscription):
+
+- `CleanerViewModel.handleLibraryChange()` — the safety-relevant one.
+  Re-fetches the session's source and re-runs the existing
+  `skipUnavailableCurrentAssets()` helper, so a photo deleted elsewhere
+  while a session is open is skipped like any other unavailable asset
+  rather than leaving the Cleaner stuck. This directly serves AGENTS.md's
+  "sessions must tolerate assets disappearing from the library" invariant
+  for the *live*, mid-session case — `skipUnavailableCurrentAssets()`
+  already handled the *resume* case (comparing against a stale saved
+  session on `load()`).
+- `SourcePickerViewModel.refreshIfNeeded()` — cosmetic freshness. Re-fetches
+  timeline groups and albums *without* flipping back to the loading state,
+  so counts update in place instead of flashing a spinner over already-
+  visible content; guarded to only run from `.content`, and a failed
+  refresh is silently ignored (`try?`) rather than replacing valid content
+  with an error screen.
+
+Both re-fetch methods swallow failures on purpose (`try?` / a plain
+`guard let ... else { return }`): a background sync failing should never
+disrupt whatever the user is already looking at.
+
+## Denied-access recovery
+
+PRODUCT.md's flow says "denial must not create a dead end." Two gaps this
+closes:
+
+- `SettingsView`'s copy still said "Milestone 1 uses safe mock photos and
+  never requests access to your real library" — stale and, since the real
+  PhotoKit adapter shipped, actively false. Replaced with accurate copy
+  about what full/limited access enables and that deletion always needs a
+  separate confirmation.
+- Home now shows a banner when `accessStatus` is `.denied` or `.restricted`,
+  read directly rather than added new state. Only `.denied` gets an "Open
+  Settings" button (`UIApplication.openSettingsURLString` via
+  `@Environment(\.openURL)`): `.restricted` is enforced externally
+  (parental controls, MDM), so a Settings link would not let the user
+  change anything, and `SettingsViewModel.canRecoverAccessInSettings`
+  encodes that same distinction for the Settings screen's own button.
+
 ## What was not changed
 
 `CleaningSession`, `CleanerViewModel`'s decision/undo/save logic,
@@ -85,12 +151,20 @@ alongside the existing `liveMock`; `PhotoCleanerApp` now composes `.live`.
 
 `PhotoTimelineGroupingTests` and `PhotoKitAuthorizationMappingTests` cover
 the two pure, PhotoKit-adjacent pieces without needing a real library.
-`PhotoKitPhotoLibraryService` itself cannot be meaningfully unit-tested:
-`PHAsset` has no public initializer and authorization prompts cannot be
-driven headlessly, so its correctness rests on this design's documented
-reasoning plus manual on-device verification (also true of PhotoKit code in
-general, which is why CLAUDE.md calls out "PhotoKit correctness" as an
-explicit review dimension rather than a test-suite one).
+`PhotoLibraryChangeBroadcasterTests` covers the fan-out itself (delivery to
+every active stream, no replay for a late subscriber, repeated
+notifications each delivered) with plain `AsyncStream` mechanics, no
+PhotoKit involved. `CleanerViewModelTests` and `SourcePickerViewModelTests`
+cover `handleLibraryChange()`/`refreshIfNeeded()` against
+`MockPhotoLibraryService` (using its new `setAssets(_:for:)`/`setAlbums(_:)`
+mutators to simulate a changed library), including that a fetch failure
+during either is silently absorbed. `PhotoKitPhotoLibraryService` itself
+still cannot be meaningfully unit-tested: `PHAsset` has no public
+initializer and authorization prompts cannot be driven headlessly, so its
+correctness rests on this design's documented reasoning plus manual
+on-device verification (also true of PhotoKit code in general, which is why
+CLAUDE.md calls out "PhotoKit correctness" as an explicit review dimension
+rather than a test-suite one).
 
 Run from `.worktrees/photo-library`:
 
@@ -106,5 +180,8 @@ Remaining manual checks: the real authorization prompt and Settings deep
 link on-device or in the simulator (seeded with sample photos via the
 simulator's Photos app), full/limited/denied/restricted flows, timeline and
 album browsing against a real library, preview rendering for both cached
-and cloud-optimized assets, and confirming no network access occurs while
-offline.
+and cloud-optimized assets, confirming no network access occurs while
+offline, deleting/adding a photo via the system Photos app while the
+Cleaner and Source Picker are open to confirm live change observation
+actually fires, and the denied-access banner's "Open Settings" button on a
+real device.

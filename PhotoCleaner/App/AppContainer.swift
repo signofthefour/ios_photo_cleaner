@@ -40,7 +40,7 @@ final class AppContainer {
     }
 
     func makeDeletionReviewViewModel() -> DeletionReviewViewModel {
-        DeletionReviewViewModel(sessions: sessions)
+        DeletionReviewViewModel(library: library, sessions: sessions)
     }
 
     func makeSettingsViewModel() -> SettingsViewModel {

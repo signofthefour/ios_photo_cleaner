@@ -23,4 +23,11 @@ final class SettingsViewModel {
         case .restricted: "Photo Access Restricted"
         }
     }
+
+    /// Only `.denied` is user-recoverable from the Settings app; `.restricted`
+    /// is enforced externally (parental controls, MDM) and a Settings link
+    /// would not actually let the user change anything.
+    var canRecoverAccessInSettings: Bool {
+        accessStatus == .denied
+    }
 }

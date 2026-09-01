@@ -4,6 +4,7 @@ import SwiftUI
 struct DeletionReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: DeletionReviewViewModel
+    @State private var isConfirmingDelete = false
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     init(model: DeletionReviewViewModel) {
@@ -20,7 +21,7 @@ struct DeletionReviewView: View {
                 ContentUnavailableView("Queue Is Empty", systemImage: "trash.slash", description: Text("No photos are pending deletion."))
             } else {
                 ScrollView {
-                    Text("Review every identifier below before any future deletion request.")
+                    Text("Review every identifier below before any permanent deletion request.")
                         .font(.callout)
                         .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
                         .padding(.horizontal)
@@ -33,10 +34,9 @@ struct DeletionReviewView: View {
                                         .fill(PhotoCleanerTheme.Palette.line)
                                         .aspectRatio(1, contentMode: .fit)
                                         .overlay {
-                                            Image(systemName: "photo")
-                                                .font(.title2)
-                                                .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+                                            thumbnail(for: model.preview(for: id))
                                         }
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
 
                                     if model.selectedIDs.contains(id) {
                                         Image(systemName: "checkmark.circle.fill")
@@ -53,6 +53,7 @@ struct DeletionReviewView: View {
 
                                 Button("Restore") { Task { try? await model.restore(id: id) } }
                                     .font(.caption)
+                                    .disabled(model.isDeleting)
                             }
                             .padding(10)
                             .background(PhotoCleanerTheme.Palette.surface)
@@ -73,19 +74,93 @@ struct DeletionReviewView: View {
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
                 Button("Select All") { model.selectAll() }
+                    .disabled(model.isDeleting)
                 Button("Deselect All") { model.deselectAll() }
+                    .disabled(model.isDeleting)
                 Spacer()
                 Button("Cancel") { model.cancel(); dismiss() }
                     .tint(PhotoCleanerTheme.Palette.inkSoft)
-                Button("Confirm (Mock)") { model.confirmMockDeletion() }
-                    .disabled(model.selectedIDs.isEmpty)
-                    .tint(PhotoCleanerTheme.Palette.delete)
+                    .disabled(model.isDeleting)
+                deleteButton
             }
         }
-        .alert("Safe Mock", isPresented: Binding(
-            get: { model.confirmationMessage != nil },
-            set: { if !$0 { model.dismissConfirmation() } }
-        )) { Button("OK") {} } message: { Text(model.confirmationMessage ?? "") }
+        .confirmationDialog(
+            deleteConfirmationTitle,
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Permanently", role: .destructive) {
+                Task { await model.confirmDeletion() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This cannot be undone from Photo Cleaner. iOS will also ask you to confirm.")
+        }
+        .alert("Deleted", isPresented: Binding(
+            get: { model.deletionSummaryMessage != nil },
+            set: { if !$0 { model.dismissDeletionSummary() } }
+        )) {
+            Button("OK") {}
+        } message: {
+            Text(model.deletionSummaryMessage ?? "")
+        }
+        .alert("Could Not Delete", isPresented: Binding(
+            get: { model.deletionErrorMessage != nil },
+            set: { if !$0 { model.dismissDeletionError() } }
+        )) {
+            Button("OK") {}
+        } message: {
+            Text(model.deletionErrorMessage ?? "")
+        }
         .task { await model.load() }
+        .task(id: model.pendingIDs) {
+            await model.loadPreviews(pixelWidth: 300, pixelHeight: 300)
+        }
+    }
+
+    private var deleteConfirmationTitle: String {
+        "Permanently delete \(model.selectedIDs.count) photo\(model.selectedIDs.count == 1 ? "" : "s")?"
+    }
+
+    @ViewBuilder
+    private func thumbnail(for preview: LocalPhotoPreview?) -> some View {
+        switch preview?.content {
+        case let .systemSymbol(name):
+            Image(systemName: name)
+                .resizable()
+                .scaledToFit()
+                .padding(16)
+                .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+        case let .encodedImageData(data):
+            if let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                placeholderThumbnail
+            }
+        case nil:
+            placeholderThumbnail
+        }
+    }
+
+    private var placeholderThumbnail: some View {
+        Image(systemName: "photo")
+            .font(.title2)
+            .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+    }
+
+    @ViewBuilder
+    private var deleteButton: some View {
+        if model.isDeleting {
+            ProgressView()
+                .accessibilityLabel("Deleting photos")
+        } else {
+            Button("Delete \(model.selectedIDs.count) Photo\(model.selectedIDs.count == 1 ? "" : "s")") {
+                isConfirmingDelete = true
+            }
+            .disabled(model.selectedIDs.isEmpty)
+            .tint(PhotoCleanerTheme.Palette.delete)
+        }
     }
 }

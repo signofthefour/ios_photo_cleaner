@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct HomeView: View {
     @State private var model: HomeViewModel
+    @Environment(\.openURL) private var openURL
     let onNavigate: (AppRoute) -> Void
 
     init(model: HomeViewModel, onNavigate: @escaping (AppRoute) -> Void) {
@@ -20,6 +21,28 @@ struct HomeView: View {
                         Text(errorMessage)
                         Button("Retry") {
                             Task { await model.load() }
+                        }
+                    }
+                    .rowStyle()
+                }
+
+                if model.accessStatus == .denied || model.accessStatus == .restricted {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(
+                            model.accessStatus == .denied
+                                ? "Photo access is turned off, so there's nothing to clean yet."
+                                : "Photo access is restricted on this device."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+
+                        if model.accessStatus == .denied {
+                            Button("Open Settings") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    openURL(url)
+                                }
+                            }
+                            .font(.footnote.weight(.semibold))
                         }
                     }
                     .rowStyle()
@@ -48,10 +71,10 @@ struct HomeView: View {
 
                 HStack(spacing: PhotoCleanerTheme.spacing) {
                     actionTile(
-                        title: "Clean by Date",
+                        title: "Clean by Month",
                         systemImage: "calendar",
                         action: { onNavigate(.sourcePicker) },
-                        hint: "Choose a timeline group to review"
+                        hint: "Choose a month to review"
                     )
                     actionTile(
                         title: "Clean an Album",
@@ -60,6 +83,34 @@ struct HomeView: View {
                         hint: "Choose an album to review"
                     )
                 }
+
+                Button {
+                    onNavigate(.cleaner(.random))
+                } label: {
+                    HStack(spacing: PhotoCleanerTheme.spacing) {
+                        ZStack {
+                            Circle().fill(PhotoCleanerTheme.Palette.background)
+                            Image(systemName: "shuffle")
+                                .foregroundStyle(PhotoCleanerTheme.Palette.ink)
+                        }
+                        .frame(width: 38, height: 38)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Give Me Random")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Photos pop up in random order from your whole library")
+                                .font(.caption)
+                                .foregroundStyle(PhotoCleanerTheme.Palette.inkSoft)
+                        }
+
+                        Spacer(minLength: 0)
+                        chevron
+                    }
+                    .foregroundStyle(PhotoCleanerTheme.Palette.ink)
+                }
+                .accessibilityHint("Starts a review of your whole library in random order")
+                .buttonStyle(.plain)
+                .rowStyle()
 
                 Button {
                     onNavigate(.deletionReview)

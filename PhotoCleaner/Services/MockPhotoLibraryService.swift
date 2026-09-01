@@ -16,12 +16,17 @@ struct AlbumAssignment: Equatable, Sendable {
 
 actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
     private var accessStatus: PhotoAccessStatus
-    private let timelineGroups: [TimelineGroup]
-    private let albums: [PhotoAlbum]
-    private let assetsBySource: [CleaningSource: [PhotoAsset]]
+    private var timelineGroups: [TimelineGroup]
+    private var albums: [PhotoAlbum]
+    private var assetsBySource: [CleaningSource: [PhotoAsset]]
     private var previewsByAssetID: [String: LocalPhotoPreview]
     private var previewDelayNanosecondsByAssetID: [String: UInt64] = [:]
     private var forcedError: MockPhotoLibraryError?
+    private let changeBroadcaster = PhotoLibraryChangeBroadcaster()
+
+    nonisolated var libraryChanges: AsyncStream<Void> {
+        changeBroadcaster.makeStream()
+    }
 
     private(set) var previewRequests: [PhotoPreviewRequest] = []
     private(set) var favoriteMutations: [FavoriteMutation] = []
@@ -107,6 +112,22 @@ actor MockPhotoLibraryService: PhotoLibraryServiceProtocol {
 
     func setPreviewDelayNanoseconds(_ delay: UInt64, for assetID: String) {
         previewDelayNanosecondsByAssetID[assetID] = delay
+    }
+
+    func setAssets(_ assets: [PhotoAsset], for source: CleaningSource) {
+        assetsBySource[source] = assets
+    }
+
+    func setAlbums(_ albums: [PhotoAlbum]) {
+        self.albums = albums
+    }
+
+    /// Simulates a library change (an asset added/removed/edited elsewhere)
+    /// for tests: emits on `libraryChanges` without altering any fetch
+    /// result itself — pair with `setAssets`/`setAlbums` to change what a
+    /// subsequent fetch returns.
+    func simulateLibraryChange() {
+        changeBroadcaster.notify()
     }
 
     func requestAuthorization() async -> PhotoAccessStatus {

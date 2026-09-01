@@ -34,6 +34,41 @@ final class SourcePickerViewModelTests: XCTestCase {
         }
     }
 
+    func testRefreshIfNeededUpdatesCountsWhileInContentState() async {
+        let library = MockPhotoLibraryService.sample
+        let model = SourcePickerViewModel(library: library)
+        await model.load()
+
+        await library.setAlbums([.init(id: "album", title: "Mock Album", photoCount: 9)])
+        await model.refreshIfNeeded()
+
+        guard case let .content(_, albums) = model.state else {
+            return XCTFail("Expected content state")
+        }
+        XCTAssertEqual(albums.first?.photoCount, 9)
+    }
+
+    func testRefreshIfNeededDoesNothingBeforeInitialLoad() async {
+        let model = SourcePickerViewModel(library: MockPhotoLibraryService.sample)
+
+        await model.refreshIfNeeded()
+
+        XCTAssertEqual(model.state, .loading)
+    }
+
+    func testRefreshIfNeededIgnoresFailureAndKeepsExistingContent() async {
+        let library = MockPhotoLibraryService.sample
+        let model = SourcePickerViewModel(library: library)
+        await model.load()
+
+        await library.setForcedError(.forcedFailure)
+        await model.refreshIfNeeded()
+
+        guard case .content = model.state else {
+            return XCTFail("Expected content state to be retained")
+        }
+    }
+
     func testSelectionReportsExactCount() {
         let model = SourcePickerViewModel(library: MockPhotoLibraryService.sample)
         let source = CleaningSource.album(.init(id: "album", title: "Trips", photoCount: 42))

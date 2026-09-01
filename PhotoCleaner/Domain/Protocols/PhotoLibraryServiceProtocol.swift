@@ -1,4 +1,10 @@
 protocol PhotoLibraryServiceProtocol: Sendable {
+    /// Emits whenever the underlying library changes (an asset added,
+    /// removed, or edited elsewhere — the system Photos app, another
+    /// device via iCloud, and so on). Carries no diff: subscribers
+    /// re-fetch whatever they're currently showing.
+    var libraryChanges: AsyncStream<Void> { get }
+
     func requestAuthorization() async -> PhotoAccessStatus
     func fetchTimelineGroups() async throws -> [TimelineGroup]
     func fetchAlbums() async throws -> [PhotoAlbum]

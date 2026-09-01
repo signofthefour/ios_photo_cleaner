@@ -4,6 +4,7 @@ import UIKit
 enum PhotoKitServiceError: Error, Equatable, Sendable {
     case albumNotFound
     case imageLoadFailed
+    case deletionFailed
     /// A mutation that belongs to a later milestone. Thrown rather than
     /// silently no-op'd or performed for real, since none of these are wired
     /// to any UI action in this milestone.
@@ -22,11 +23,39 @@ enum PhotoKitServiceError: Error, Equatable, Sendable {
 /// and only the first locally available result is used even when
 /// PhotoKit's `.opportunistic` delivery mode would later deliver a
 /// higher-quality rendition.
-final class PhotoKitPhotoLibraryService: PhotoLibraryServiceProtocol, @unchecked Sendable {
+final class PhotoKitPhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, PHPhotoLibraryChangeObserver, @unchecked Sendable {
     private let imageManager: PHImageManager
+    private let changeBroadcaster = PhotoLibraryChangeBroadcaster()
+    private let registrationLock = NSLock()
+    private var isRegisteredWithPhotoLibrary = false
+
+    var libraryChanges: AsyncStream<Void> {
+        registerWithPhotoLibraryIfNeeded()
+        return changeBroadcaster.makeStream()
+    }
 
     init(imageManager: PHImageManager = .default()) {
         self.imageManager = imageManager
+        super.init()
+    }
+
+    deinit {
+        PHPhotoLibrary.shared().unregisterChangeObserver(self)
+    }
+
+    /// Registration is lazy (on first `libraryChanges` access) rather than
+    /// in `init`, so constructing this service never touches PhotoKit
+    /// before the caller actually wants change events.
+    private func registerWithPhotoLibraryIfNeeded() {
+        registrationLock.lock()
+        defer { registrationLock.unlock() }
+        guard !isRegisteredWithPhotoLibrary else { return }
+        isRegisteredWithPhotoLibrary = true
+        PHPhotoLibrary.shared().register(self)
+    }
+
+    func photoLibraryDidChange(_ changeInstance: PHChange) {
+        changeBroadcaster.notify()
     }
 
     func requestAuthorization() async -> PhotoAccessStatus {
@@ -69,6 +98,8 @@ final class PhotoKitPhotoLibraryService: PhotoLibraryServiceProtocol, @unchecked
             return fetchAssets(matching: group)
         case let .album(album):
             return try fetchAssets(inAlbumID: album.id)
+        case .random:
+            return fetchShuffledLibraryAssets()
         }
     }
 
@@ -93,10 +124,28 @@ final class PhotoKitPhotoLibraryService: PhotoLibraryServiceProtocol, @unchecked
         throw PhotoKitServiceError.notImplemented("Album creation ships in Milestone 4")
     }
 
+    /// Permanently deletes the given assets. iOS itself presents a native
+    /// confirmation alert for `PHAssetChangeRequest.deleteAssets`, on top of
+    /// this app's own Deletion Review screen — the user confirms twice.
+    /// Ids that no longer resolve to a real asset (already removed from the
+    /// library some other way) are treated as already-deleted rather than an
+    /// error, so the caller can still resolve them out of its pending queue.
     func deleteAssets(ids: [String]) async throws {
-        throw PhotoKitServiceError.notImplemented(
-            "Permanent deletion ships in Milestone 5 behind a separate confirmation"
-        )
+        try Task.checkCancellation()
+        let assetsToDelete = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
+        guard assetsToDelete.count > 0 else { return }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.deleteAssets(assetsToDelete)
+            } completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: error ?? PhotoKitServiceError.deletionFailed)
+                }
+            }
+        }
     }
 
     // MARK: - Fetching
@@ -153,6 +202,17 @@ final class PhotoKitPhotoLibraryService: PhotoLibraryServiceProtocol, @unchecked
             assets.append(Self.photoAsset(from: asset))
         }
         return assets
+    }
+
+    private func fetchShuffledLibraryAssets() -> [PhotoAsset] {
+        let result = PHAsset.fetchAssets(with: .image, options: nil)
+        var assets: [PhotoAsset] = []
+        assets.reserveCapacity(result.count)
+        result.enumerateObjects { asset, _, _ in
+            assets.append(Self.photoAsset(from: asset))
+        }
+        var rng = SystemRandomNumberGenerator()
+        return RandomPhotoOrdering.shuffled(assets, using: &rng)
     }
 
     private func fetchAsset(byLocalIdentifier id: String) -> PHAsset? {

@@ -28,7 +28,7 @@ final class SafetyInvariantTests: XCTestCase {
         let shouldDismiss = await cleaner.saveForExit()
         XCTAssertTrue(shouldDismiss)
 
-        let review = DeletionReviewViewModel(sessions: repository)
+        let review = DeletionReviewViewModel(library: library, sessions: repository)
         await review.load()
         review.selectAll()
         review.deselectAll()

@@ -50,6 +50,59 @@ Last updated: 2026-09-01 (Asia/Seoul)
   from the UI yet. `PhotoCleanerApp` now composes `AppContainer.live`. See
   `docs/superpowers/specs/2026-09-01-photo-library-design.md`.
 
+- Added real permanent deletion on `feature/deletion-review` (branched from
+  `feature/photo-library`): Deletion Review's confirm action now calls
+  `PhotoKitPhotoLibraryService.deleteAssets(ids:)` (real
+  `PHAssetChangeRequest.deleteAssets` via `PHPhotoLibrary.performChanges`),
+  behind a new in-app `.confirmationDialog` in addition to iOS's own native
+  delete confirmation. `CleaningSession.markAssetsDeleted(ids:)` resolves
+  successfully deleted ids out of the pending queue; a failed or cancelled
+  deletion leaves the queue, session, and selection unchanged and shows a
+  recoverable error. `favorite`/`album` mutation remain `.notImplemented`.
+  See `docs/superpowers/specs/2026-09-01-deletion-review-design.md`.
+
+- Added a "Give Me Random" mode and renamed "Clean by Date" to "Clean by
+  Month" (the grouping was already month-based; this was a label fix, not a
+  behavior change). `CleaningSource` gained a `.random` case; Home navigates
+  straight to the Cleaner with it, bypassing Source Picker since there is
+  nothing to pick. `PhotoKitPhotoLibraryService.fetchAssets(for: .random)`
+  fetches the whole image library and shuffles it via the pure, seed-testable
+  `RandomPhotoOrdering`. No other Cleaner/session logic changed — a random
+  session behaves exactly like a month or album session once assets are
+  loaded.
+
+- Fixed a resume/continue gap: a finished review (every asset decided) was
+  still offered as "Continue Cleaning" from Home, and revisiting its exact
+  source in the Cleaner just resumed the exhausted position, showing "Review
+  Complete" immediately. Added `CleaningSession.isComplete`; `HomeViewModel`
+  now only exposes a saved session for "Continue" when it isn't complete,
+  and `CleanerViewModel.load()` only resumes a saved session when it matches
+  the requested source *and* isn't complete — otherwise it starts a fresh
+  session. Because the single-slot session repository couples the review
+  position with the pending-deletion queue, starting fresh now explicitly
+  carries the previous session's `pendingDeletionIDs` forward (this also
+  fixes an existing bug where switching to a different source silently
+  dropped whatever was already queued for deletion). Pending Deletion's
+  count is read independent of completion either way, so it's unaffected.
+
+- Closed out Milestone 2 (it was previously incomplete: authorization and
+  browsing worked, but library-change observation was entirely missing, and
+  denied access was a dead end). Added `PhotoLibraryServiceProtocol
+  .libraryChanges: AsyncStream<Void>`, backed by a new
+  `PhotoLibraryChangeBroadcaster` shared by both `MockPhotoLibraryService`
+  and `PhotoKitPhotoLibraryService` (the latter now an `NSObject` subclass
+  conforming to `PHPhotoLibraryChangeObserver`, registering lazily on first
+  access). `CleanerViewModel.handleLibraryChange()` re-fetches and re-runs
+  the existing unavailable-asset handling when the library changes mid-
+  session (the live counterpart to the resume-time check that already
+  existed); `SourcePickerViewModel.refreshIfNeeded()` silently refreshes
+  counts without a loading flash. Also fixed `SettingsView`'s stale
+  "Milestone 1 uses mock photos" copy (false since the PhotoKit adapter
+  shipped) and added a denied-access recovery path: Home now shows a
+  banner for `.denied`/`.restricted` access, with an "Open Settings" button
+  for `.denied` (`.restricted` is externally enforced, so no button).
+  See `docs/superpowers/specs/2026-09-01-photo-library-design.md`.
+
 ## Remaining foundation checks
 
 - Complete manual iPhone 13 mini checks for the 25-percent threshold feel,
@@ -68,17 +121,34 @@ Last updated: 2026-09-01 (Asia/Seoul)
   navigation and accessibility interaction coverage is required. The current
   project contains only the app and unit-test targets.
 
-## Subsequent milestones
+## Milestone status
 
-- Milestone 2: PhotoKit authorization and browsing, limited-library support,
-  library-change observation, and a production local-preview adapter with
-  network access disabled.
-- Milestone 3: production swipe-cleaner interaction, prefetching, and durable
-  session behavior.
-- Milestone 4: favorite and album mutation.
-- Milestone 5: exact deletion review and separately confirmed PhotoKit deletion.
-- Milestone 6: production hardening, profiling, localization, privacy metadata,
-  and archive validation.
+Work has not proceeded strictly in order — Milestone 3's interaction and
+much of Milestone 5 were built before Milestone 4 — so this reflects actual
+status per milestone rather than "what's left, in order."
+
+- Milestone 1 (Foundation): complete.
+- Milestone 2 (Photo authorization and browsing): complete as of this
+  session — all access states, timeline/album browsing, empty/error
+  states, and library-change observation are in place. `.limited` access
+  is handled like `.authorized` throughout; no separate "select more
+  photos" affordance was built for it.
+- Milestone 3 (Swipe cleaner): the interaction itself — gesture math,
+  stamps, undo, progress, and prefetching the visible three-card window —
+  was built ahead of schedule on `feature/foundation`. Not done: durable
+  session persistence. Sessions are still `InMemorySessionRepository`
+  only and do not survive an app relaunch.
+- Milestone 4 (Favorites and albums): not started.
+  `setFavorite`/`addAsset`/`createAlbum` all throw `.notImplemented` and
+  are unreachable from the UI.
+- Milestone 5 (Safe deletion): the core is done — exact review set,
+  restoration, a confirmed real PhotoKit delete request (behind both an
+  in-app and the native iOS confirmation), and post-success session
+  updates. Not verified: an id that disappears from the library between
+  being queued and being confirmed (the code treats it as already-deleted
+  rather than an error, but this has not been exercised against a real
+  disappearing asset).
+- Milestone 6 (Production hardening): not started.
 
 ## Verification commands
 
@@ -120,4 +190,53 @@ PhotoKit adapter:
   outcome, timeline/album browsing against an actual seeded library, preview
   rendering for cached vs. cloud-optimized assets, and confirming no network
   access while offline — all require interactive on-device/simulator use
-  this session did not perform.
+  this session did not perform. The authorization prompt itself was
+  confirmed on the simulator (correct privacy string, real library
+  contents), but tapping through it requires interactive input this session
+  could not script.
+
+Verified again on 2026-09-01 on `feature/deletion-review`, after wiring real
+deletion:
+
+- Build and unit-test commands both exited 0 (`** BUILD SUCCEEDED **`,
+  `** TEST SUCCEEDED **`); 52 tests passed with zero failures (49 prior plus
+  3 new `DeletionReviewViewModelTests` cases for success, failure, and
+  nothing-selected).
+- `rg` confirmed `deleteAssets` is called from exactly one place in
+  `Features` (`DeletionReviewViewModel.confirmDeletion()`), no
+  `setFavorite`/`addAsset`/`createAlbum` calls outside `Services`, and no
+  `SwiftData` imports.
+- Not yet verified: real on-device deletion (accepting and declining both
+  the in-app and native iOS confirmations), an id that disappears from the
+  library before confirming, and VoiceOver/Dynamic Type on the new dialogs
+  and button — all require interactive input this session could not
+  script.
+- Also verified on `feature/deletion-review` after adding real Deletion
+  Review thumbnails (`DeletionReviewViewModel.loadPreviews`), the Cleaner's
+  `.onDisappear` safety-net save, and the "Give Me Random" mode plus the
+  "Clean by Month" rename: build and unit-test commands both exited 0; 58
+  tests passed with zero failures (52 prior plus 2 preview-loading cases, 1
+  `.random`-source case, and 3 `RandomPhotoOrderingTests`). `rg` re-confirmed
+  `deleteAssets` is still called from exactly one place and no `SwiftData`
+  imports exist. Not yet verified: real thumbnails and the onDisappear save
+  on-device, and "Give Me Random" against a real shuffled library — all
+  require interactive input this session could not script.
+
+Verified again after the completed-session resume fix: build and unit-test
+commands both exited 0; 63 tests passed with zero failures (58 prior plus 2
+`CleaningSession.isComplete` cases, 2 `CleanerViewModel` cases covering
+same-source and cross-source pending-deletion carry-forward, and 1
+`HomeViewModel` case). Not yet verified on-device: finishing a real session,
+confirming Home no longer offers "Continue," and confirming a fresh session
+starts on revisiting that source.
+
+Verified again after closing out Milestone 2 (library-change observation,
+Settings copy fix, denied-access recovery): build and unit-test commands
+both exited 0; 71 tests passed with zero failures (63 prior plus 3
+`PhotoLibraryChangeBroadcasterTests`, 2 `CleanerViewModel` library-change
+cases, and 3 `SourcePickerViewModel` refresh cases). `rg` re-confirmed
+`deleteAssets` is still called from exactly one place and no `SwiftData`
+imports exist. Not yet verified on-device: deleting/adding a photo via the
+system Photos app while the Cleaner or Source Picker is open, and the
+denied-access "Open Settings" button actually opening the app's Settings
+page.

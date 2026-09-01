@@ -26,8 +26,12 @@ final class HomeViewModel {
         accessStatus = await library.requestAuthorization()
 
         do {
-            savedSession = try await sessions.loadCurrent()
-            pendingDeletionCount = savedSession?.pendingDeletionIDs.count ?? 0
+            let saved = try await sessions.loadCurrent()
+            // A finished review is never offered as "Continue" — its source
+            // starts fresh next time. Anything it queued for deletion still
+            // counts, independent of whether that review is done.
+            savedSession = (saved?.isComplete == false) ? saved : nil
+            pendingDeletionCount = saved?.pendingDeletionIDs.count ?? 0
         } catch {
             savedSession = nil
             pendingDeletionCount = 0

@@ -14,6 +14,17 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertNotNil(model.savedSession)
     }
 
+    func testCompletedSessionIsNotOfferedAsContinueButPendingDeletionStillCounts() async {
+        let library = MockPhotoLibraryService.sample
+        let repository = InMemorySessionRepository(initial: .fixturePendingDeletion(ids: ["a", "b"]))
+        let model = HomeViewModel(library: library, sessions: repository)
+
+        await model.load()
+
+        XCTAssertNil(model.savedSession)
+        XCTAssertEqual(model.pendingDeletionCount, 2)
+    }
+
     func testRoutesRemainStronglyTyped() {
         let router = AppRouter()
 

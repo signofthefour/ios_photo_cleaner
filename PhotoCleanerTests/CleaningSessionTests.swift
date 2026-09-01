@@ -23,6 +23,21 @@ final class CleaningSessionTests: XCTestCase {
         XCTAssertEqual(session.currentPosition, 0)
     }
 
+    func testIsCompleteReflectsWhetherEveryAssetHasBeenDecided() throws {
+        var session = CleaningSession.fixture(assetIDs: ["a", "b"])
+        XCTAssertFalse(session.isComplete)
+
+        try session.decide(.keep, assetID: "a")
+        XCTAssertFalse(session.isComplete)
+
+        try session.decide(.pendingDelete, assetID: "b")
+        XCTAssertTrue(session.isComplete)
+    }
+
+    func testEmptySessionIsImmediatelyComplete() {
+        XCTAssertTrue(CleaningSession.fixture(assetIDs: []).isComplete)
+    }
+
     func testMissingAssetIsRecordedAndSkipped() {
         var session = CleaningSession.fixture(assetIDs: ["a", "b"])
 

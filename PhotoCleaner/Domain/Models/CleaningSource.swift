@@ -16,4 +16,7 @@ struct PhotoAlbum: Identifiable, Hashable, Codable, Sendable {
 enum CleaningSource: Hashable, Codable, Sendable {
     case timeline(TimelineGroup)
     case album(PhotoAlbum)
+    /// The whole library, in a shuffled order, started directly from Home
+    /// without picking a specific month or album.
+    case random
 }

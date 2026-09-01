@@ -3,7 +3,7 @@ import SwiftUI
 @MainActor
 struct SourcePickerView: View {
     private enum Kind: String, CaseIterable {
-        case timeline = "By Date"
+        case timeline = "By Month"
         case albums = "Albums"
     }
 
@@ -30,6 +30,11 @@ struct SourcePickerView: View {
         .background(PhotoCleanerTheme.Palette.background)
         .navigationTitle("Choose Photos")
         .task { await model.load() }
+        .task {
+            for await _ in model.libraryChanges {
+                await model.refreshIfNeeded()
+            }
+        }
     }
 
     @ViewBuilder

@@ -85,6 +85,18 @@ struct CleanerView: View {
         .task(id: model.currentAsset?.id) {
             await model.loadVisiblePreviews(pixelWidth: 900, pixelHeight: 900)
         }
+        .task {
+            for await _ in model.libraryChanges {
+                await model.handleLibraryChange()
+            }
+        }
+        .onDisappear {
+            // Hiding the back button does not disable the interactive
+            // edge-swipe-back gesture, so this is a safety net: whichever
+            // way the Cleaner leaves the screen, the session is saved.
+            // Idempotent with the explicit Close & Save path above.
+            Task { await model.saveForExit() }
+        }
     }
 
     private var saveErrorIsPresented: Binding<Bool> {

@@ -13,6 +13,13 @@ struct CleaningSession: Hashable, Codable, Sendable {
 
     private var undoHistory: [String] = []
 
+    /// True once every asset in this session has a decision (or was skipped
+    /// as unavailable). A complete session is not offered for "Continue" —
+    /// revisiting its source starts a fresh session instead.
+    var isComplete: Bool {
+        currentPosition >= orderedAssetIDs.count
+    }
+
     init(
         id: UUID,
         source: CleaningSource,
@@ -84,6 +91,20 @@ struct CleaningSession: Hashable, Codable, Sendable {
         guard decisions[assetID] == .pendingDelete else { return }
         decisions.removeValue(forKey: assetID)
         pendingDeletionIDs.removeAll { $0 == assetID }
+        updatedAt = Date()
+    }
+
+    /// Marks assets as resolved after a successful (or already-moot) permanent
+    /// deletion request: no longer pending, since the photo no longer exists
+    /// in the library. Call only after the system delete has succeeded.
+    mutating func markAssetsDeleted(ids assetIDs: [String]) {
+        let idsToRemove = Set(assetIDs)
+        guard !idsToRemove.isEmpty else { return }
+
+        for assetID in idsToRemove {
+            decisions.removeValue(forKey: assetID)
+        }
+        pendingDeletionIDs.removeAll { idsToRemove.contains($0) }
         updatedAt = Date()
     }
 }
